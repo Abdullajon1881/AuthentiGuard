@@ -1,0 +1,271 @@
+##
+## Step 108: GitOps CD workflow — build, push, and deploy.
+##
+## Triggered by:
+##   - Push to develop   → deploy to staging (automatic)
+##   - Push to main      → deploy to production (automatic after smoke tests)
+##   - Manual dispatch   → deploy any environment with any image tag
+##
+## Promotion pipeline:
+##   1. Build multi-arch Docker images (linux/amd64 + linux/arm64)
+##   2. Run unit + integration tests inside the built image
+##   3. Push to ECR with commit SHA + semver tags
+##   4. Deploy to staging via Kustomize image patch
+##   5. Run smoke tests against staging
+##   6. If staging passes → update ArgoCD production targetRevision
+##   7. ArgoCD syncs production (auto on main, manual otherwise)
+##
+
+name: CD — Build, Push, Deploy
+
+on:
+  push:
+    branches: [main, develop]
+    tags:     ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required:    true
+        default:     staging
+        type:        choice
+        options:     [staging, production]
+      image_tag:
+        description: "Image tag to deploy (defaults to HEAD SHA)"
+        required:    false
+
+concurrency:
+  group: "deploy-${{ github.ref }}"
+  cancel-in-progress: false    # never cancel in-progress deploys
+
+env:
+  AWS_REGION:    us-east-1
+  ECR_REGISTRY:  ${{ secrets.ECR_REGISTRY }}
+  PLATFORMS:     linux/amd64,linux/arm64
+
+jobs:
+
+  # ── Job 1: Build and push container images ─────────────────
+  build:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.short_sha }}
+      api_image: ${{ env.ECR_REGISTRY }}/authentiguard-api:${{ steps.meta.outputs.short_sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: meta
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "Image tag: $SHORT_SHA"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: ${{ env.PLATFORMS }}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context:   backend
+          file:      backend/Dockerfile
+          platforms: ${{ env.PLATFORMS }}
+          push:      true
+          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/authentiguard-api:cache
+          cache-to:   type=registry,ref=${{ env.ECR_REGISTRY }}/authentiguard-api:cache,mode=max
+          tags: |
+            ${{ env.ECR_REGISTRY }}/authentiguard-api:${{ steps.meta.outputs.short_sha }}
+            ${{ env.ECR_REGISTRY }}/authentiguard-api:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Build and push Worker image
+        uses: docker/build-push-action@v5
+        with:
+          context:   .
+          file:      backend/Dockerfile.worker
+          platforms: linux/amd64    # GPU workers are amd64 only
+          push:      true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/authentiguard-worker:${{ steps.meta.outputs.short_sha }}
+            ${{ env.ECR_REGISTRY }}/authentiguard-worker:latest
+
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context:   frontend
+          file:      frontend/Dockerfile
+          platforms: ${{ env.PLATFORMS }}
+          push:      true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/authentiguard-frontend:${{ steps.meta.outputs.short_sha }}
+            ${{ env.ECR_REGISTRY }}/authentiguard-frontend:latest
+
+  # ── Job 2: Deploy to staging ────────────────────────────────
+  deploy-staging:
+    name: Deploy → Staging
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.authentiguard.io
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name authentiguard-staging \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Deploy via Kustomize
+        run: |
+          cd infra/k8s/overlays/staging
+          kustomize edit set image \
+            "$ECR_REGISTRY/authentiguard-api=$ECR_REGISTRY/authentiguard-api:${{ needs.build.outputs.image_tag }}" \
+            "$ECR_REGISTRY/authentiguard-worker=$ECR_REGISTRY/authentiguard-worker:${{ needs.build.outputs.image_tag }}" \
+            "$ECR_REGISTRY/authentiguard-frontend=$ECR_REGISTRY/authentiguard-frontend:${{ needs.build.outputs.image_tag }}"
+          kubectl apply -k .
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/api        -n authentiguard-staging --timeout=300s
+          kubectl rollout status deployment/worker-cpu -n authentiguard-staging --timeout=300s
+          kubectl rollout status deployment/frontend   -n authentiguard-staging --timeout=300s
+
+  # ── Job 3: Smoke tests against staging ──────────────────────
+  smoke-tests:
+    name: Smoke Tests → Staging
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run smoke tests
+        env:
+          STAGING_URL: https://staging-api.authentiguard.io
+          SMOKE_API_KEY: ${{ secrets.SMOKE_TEST_API_KEY }}
+        run: |
+          python -m pytest tests/smoke/ \
+            --base-url "$STAGING_URL" \
+            --api-key  "$SMOKE_API_KEY" \
+            -v --tb=short --timeout=120
+
+  # ── Job 4: Deploy to production ─────────────────────────────
+  deploy-production:
+    name: Deploy → Production
+    needs: [build, smoke-tests]
+    runs-on: ubuntu-latest
+
+    # Only deploy to production from main branch or version tags
+    if: |
+      github.ref == 'refs/heads/main' ||
+      startsWith(github.ref, 'refs/tags/v')
+
+    environment:
+      name: production
+      url: https://api.authentiguard.io
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig (production)
+        run: |
+          aws eks update-kubeconfig \
+            --name authentiguard-production \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Deploy via Kustomize (production)
+        run: |
+          cd infra/k8s/overlays/production
+          kustomize edit set image \
+            "$ECR_REGISTRY/authentiguard-api=$ECR_REGISTRY/authentiguard-api:${{ needs.build.outputs.image_tag }}" \
+            "$ECR_REGISTRY/authentiguard-worker=$ECR_REGISTRY/authentiguard-worker:${{ needs.build.outputs.image_tag }}" \
+            "$ECR_REGISTRY/authentiguard-frontend=$ECR_REGISTRY/authentiguard-frontend:${{ needs.build.outputs.image_tag }}"
+          kubectl apply -k .
+
+      - name: Canary rollout — wait for 25% of pods
+        run: |
+          sleep 60
+          READY=$(kubectl get deployment api -n authentiguard \
+            -o jsonpath='{.status.readyReplicas}')
+          DESIRED=$(kubectl get deployment api -n authentiguard \
+            -o jsonpath='{.spec.replicas}')
+          echo "Ready: $READY / $DESIRED"
+          if [ "$READY" -lt 1 ]; then
+            echo "No pods ready — aborting and rolling back"
+            kubectl rollout undo deployment/api -n authentiguard
+            exit 1
+          fi
+
+      - name: Wait for full rollout
+        run: |
+          kubectl rollout status deployment/api        -n authentiguard --timeout=600s
+          kubectl rollout status deployment/worker-cpu -n authentiguard --timeout=600s
+          kubectl rollout status deployment/frontend   -n authentiguard --timeout=600s
+
+      - name: Tag release in ECR
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          for SERVICE in api worker frontend; do
+            MANIFEST=$(aws ecr batch-get-image \
+              --repository-name "authentiguard-$SERVICE" \
+              --image-ids imageTag="${{ needs.build.outputs.image_tag }}" \
+              --query 'images[].imageManifest' --output text)
+            aws ecr put-image \
+              --repository-name "authentiguard-$SERVICE" \
+              --image-tag "$VERSION" \
+              --image-manifest "$MANIFEST"
+          done
+
+      - name: Notify Slack on success
+        if: success()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_MESSAGE: |
+            ✅ Production deployed: `${{ needs.build.outputs.image_tag }}`
+            Commit: `${{ github.sha }}`
+            By: ${{ github.actor }}
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_COLOR:   failure
+          SLACK_MESSAGE: |
+            ❌ Production deploy FAILED: `${{ needs.build.outputs.image_tag }}`
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

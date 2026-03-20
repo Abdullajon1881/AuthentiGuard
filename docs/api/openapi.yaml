@@ -1,0 +1,688 @@
+openapi: 3.1.0
+
+info:
+  title: AuthentiGuard API
+  description: |
+    **AuthentiGuard** — AI content authenticity detection platform.
+
+    Detect AI-generated text, images, audio, video, and code with a single API call.
+    Every response includes a calibrated confidence score, per-layer evidence breakdown,
+    model attribution (GPT / Claude / LLaMA / human), and a cryptographically signed
+    forensic report.
+
+    ## Authentication
+
+    All endpoints (except `/health`) require a Bearer JWT token obtained from
+    `POST /api/v1/auth/login`, or an API key passed as `X-API-Key`.
+
+    ## Rate limits
+
+    | Tier       | Limit         |
+    |------------|---------------|
+    | Free       | 10 req / min  |
+    | Pro        | 100 req / min |
+    | Enterprise | 1000 req / min|
+
+    Rate limit headers are returned on every response:
+    `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+
+    ## Webhooks
+
+    Register a webhook URL at `POST /api/v1/webhooks` to receive real-time
+    completion notifications for async analysis jobs. Every webhook payload
+    is signed with `X-AuthentiGuard-Signature` (HMAC-SHA256).
+  version: "0.1.0"
+  contact:
+    name:  AuthentiGuard Engineering
+    email: api@authentiguard.io
+    url:   https://docs.authentiguard.io
+  license:
+    name: Proprietary
+    url:  https://authentiguard.io/terms
+
+servers:
+  - url:         https://api.authentiguard.io
+    description: Production
+  - url:         https://staging-api.authentiguard.io
+    description: Staging
+  - url:         http://localhost:8000
+    description: Local development
+
+tags:
+  - name: auth
+    description: Authentication and token management
+  - name: analysis
+    description: AI content detection (text, file, batch)
+  - name: jobs
+    description: Async job management and results
+  - name: dashboard
+    description: Usage statistics and account overview
+  - name: account
+    description: Account management and GDPR rights
+  - name: webhooks
+    description: Webhook registration and management
+  - name: health
+    description: Service health and readiness
+
+paths:
+
+  # ── Authentication ──────────────────────────────────────────
+
+  /api/v1/auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Create a new account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RegisterRequest"}
+            example:
+              email:        user@example.com
+              password:     "Secure#Pass123!"
+              full_name:    Jane Smith
+              consent_given: true
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UserResponse"}
+        "409":
+          description: Email already registered
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Obtain a JWT access token
+      description: |
+        Returns a short-lived access token (15 min) and a long-lived
+        refresh token (30 days). Store the refresh token securely —
+        it is single-use and rotated on every refresh.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LoginRequest"}
+      responses:
+        "200":
+          description: Tokens issued
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TokenPair"}
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshToken
+      summary: Rotate a refresh token
+      description: |
+        Exchange a valid refresh token for a new access + refresh token pair.
+        The submitted refresh token is immediately invalidated (single-use rotation).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: {type: string}
+      responses:
+        "200":
+          description: New token pair issued
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TokenPair"}
+        "401":
+          description: Invalid or expired refresh token
+
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Revoke all refresh tokens
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Logged out}
+
+  # ── Analysis ────────────────────────────────────────────────
+
+  /api/v1/analyze/text:
+    post:
+      tags: [analysis]
+      operationId: analyzeText
+      summary: Detect AI-generated text
+      description: |
+        Submits text for synchronous AI detection. Returns the full result
+        immediately for texts up to ~10,000 words. Longer texts are processed
+        asynchronously — poll `GET /api/v1/jobs/{id}` for the result.
+      security: [{bearerAuth: []}, {apiKey: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TextAnalysisRequest"}
+            example:
+              content: >
+                Furthermore, it is worth noting that this approach leverages
+                robust mechanisms to facilitate comprehensive understanding.
+      responses:
+        "200":
+          description: Detection complete (synchronous)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DetectionResult"}
+        "202":
+          description: Job accepted (async — poll for result)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobAccepted"}
+        "413":
+          description: Content too large (> 1MB)
+        "429":
+          description: Rate limit exceeded
+
+  /api/v1/analyze/file:
+    post:
+      tags: [analysis]
+      operationId: analyzeFile
+      summary: Detect AI-generated media (image, audio, video, code)
+      description: |
+        Upload a file for AI content detection. Supported formats:
+        - **Image**: JPEG, PNG, WebP, TIFF, HEIC (max 50 MB)
+        - **Audio**: MP3, WAV, FLAC, M4A, OGG (max 100 MB)
+        - **Video**: MP4, MOV, AVI, MKV, WebM (max 500 MB)
+        - **Code**:  .py, .js, .ts, .java, .go, .cpp, .rs (max 5 MB)
+
+        All files are processed asynchronously. Poll the returned job ID
+        or register a webhook for completion notification.
+      security: [{bearerAuth: []}, {apiKey: []}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The file to analyse
+                claimed_source:
+                  type: string
+                  description: >
+                    Optional. Human-readable description of the file's claimed
+                    origin (e.g. "photo captured with iPhone 15"). Used in the
+                    cross-modal consistency check.
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobAccepted"}
+        "415":
+          description: Unsupported file type
+        "413":
+          description: File too large
+
+  /api/v1/analyze/batch:
+    post:
+      tags: [analysis]
+      operationId: submitBatch
+      summary: Submit a batch of items for analysis (Enterprise)
+      description: |
+        Submit up to 1,000 items in a single batch request. Items are
+        processed in parallel across Celery workers. Progress is streamed
+        via `GET /api/v1/jobs/batch/{batch_id}/stream` (SSE).
+      security: [{bearerAuth: []}, {apiKey: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BatchRequest"}
+      responses:
+        "202":
+          description: Batch accepted
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BatchAccepted"}
+        "400":
+          description: Batch too large (> 1,000 items)
+        "403":
+          description: Enterprise tier required
+
+  # ── Jobs ─────────────────────────────────────────────────────
+
+  /api/v1/jobs/{job_id}:
+    get:
+      tags: [jobs]
+      operationId: getJob
+      summary: Get job status and result
+      security: [{bearerAuth: []}, {apiKey: []}]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Job details
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobResponse"}
+        "404":
+          description: Job not found
+
+  /api/v1/jobs/{job_id}/result:
+    get:
+      tags: [jobs]
+      operationId: getJobResult
+      summary: Get the full detection result for a completed job
+      security: [{bearerAuth: []}, {apiKey: []}]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: include_report
+          in: query
+          schema: {type: boolean, default: false}
+          description: Include the full signed forensic report JSON
+      responses:
+        "200":
+          description: Detection result
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DetectionResult"}
+        "409":
+          description: Job is still processing
+
+  /api/v1/jobs/batch/{batch_id}/stream:
+    get:
+      tags: [jobs]
+      operationId: streamBatchProgress
+      summary: Stream batch progress via Server-Sent Events
+      security: [{bearerAuth: []}, {apiKey: []}]
+      parameters:
+        - name: batch_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: SSE stream of batch progress events
+          content:
+            text/event-stream:
+              schema:
+                type: object
+                properties:
+                  batch_id:       {type: string}
+                  total:          {type: integer}
+                  completed:      {type: integer}
+                  failed:         {type: integer}
+                  completion_pct: {type: number}
+                  status:         {type: string, enum: [processing, completed]}
+
+  # ── Dashboard ────────────────────────────────────────────────
+
+  /api/v1/dashboard/stats:
+    get:
+      tags: [dashboard]
+      operationId: getDashboardStats
+      summary: Usage statistics and detection breakdown
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [24h, 7d, 30d, 90d]
+            default: 30d
+      responses:
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DashboardStats"}
+
+  # ── Account (GDPR) ───────────────────────────────────────────
+
+  /api/v1/account/data-export:
+    get:
+      tags: [account]
+      operationId: exportUserData
+      summary: Export all personal data (GDPR Article 15)
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Full data export
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DataExport"}
+
+  /api/v1/account:
+    delete:
+      tags: [account]
+      operationId: deleteAccount
+      summary: Delete account and all personal data (GDPR Article 17)
+      description: |
+        GDPR Article 17 — Right to erasure ("right to be forgotten").
+        Permanently deletes all user data: uploads, analysis results,
+        API keys, and the account record. A deletion receipt is returned
+        as proof of erasure. Audit log entries are retained for legal
+        compliance and cannot be deleted.
+
+        **This action is irreversible.**
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm]
+              properties:
+                confirm:
+                  type: string
+                  enum: ["DELETE MY ACCOUNT"]
+                  description: Must be exactly "DELETE MY ACCOUNT"
+      responses:
+        "200":
+          description: Account deleted — receipt returned
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeletionReceipt"}
+
+  # ── Health ───────────────────────────────────────────────────
+
+  /health:
+    get:
+      tags: [health]
+      operationId: healthCheck
+      summary: Service health check
+      description: Returns 200 if the service is healthy. No authentication required.
+      responses:
+        "200":
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:   {type: string, example: ok}
+                  version:  {type: string, example: "0.1.0"}
+                  uptime_s: {type: number}
+
+  /health/ready:
+    get:
+      tags: [health]
+      operationId: readinessCheck
+      summary: Kubernetes readiness probe
+      description: Returns 200 when DB and Redis are reachable.
+      responses:
+        "200": {description: Ready}
+        "503": {description: Not ready}
+
+# ── Reusable Components ──────────────────────────────────────
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+
+    RegisterRequest:
+      type: object
+      required: [email, password, consent_given]
+      properties:
+        email:
+          type:   string
+          format: email
+        password:
+          type:      string
+          minLength: 8
+          description: Must contain uppercase, lowercase, digit, and special char
+        full_name:
+          type: string
+        consent_given:
+          type: boolean
+          description: GDPR consent — must be true
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:    {type: string, format: email}
+        password: {type: string}
+
+    TokenPair:
+      type: object
+      properties:
+        access_token:       {type: string}
+        refresh_token:      {type: string}
+        token_type:         {type: string, example: bearer}
+        expires_in:         {type: integer, example: 900, description: Access token TTL in seconds}
+
+    UserResponse:
+      type: object
+      properties:
+        id:         {type: string, format: uuid}
+        email:      {type: string}
+        full_name:  {type: string}
+        role:       {type: string, enum: [admin, analyst, api_consumer]}
+        tier:       {type: string, enum: [free, pro, enterprise]}
+        created_at: {type: string, format: date-time}
+
+    TextAnalysisRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type:      string
+          minLength: 50
+          maxLength: 1000000
+        language:
+          type:        string
+          description: ISO 639-1 language code (auto-detected if omitted)
+        claimed_author:
+          type:        string
+          description: Optional — used in cross-modal consistency check
+
+    JobAccepted:
+      type: object
+      properties:
+        job_id:    {type: string, format: uuid}
+        status:    {type: string, enum: [pending, processing]}
+        poll_url:  {type: string, format: uri}
+        estimated_seconds: {type: integer}
+
+    BatchRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 1000
+          items:
+            type: object
+            required: [content_type, content_key, filename]
+            properties:
+              item_id:      {type: string}
+              content_type: {type: string, enum: [text, image, video, audio, code]}
+              content_key:  {type: string, description: S3 key of pre-uploaded file}
+              filename:     {type: string}
+        webhook_url:
+          type:   string
+          format: uri
+          description: Called with BatchSummary when all items complete
+
+    BatchAccepted:
+      type: object
+      properties:
+        batch_id:    {type: string, format: uuid}
+        total_items: {type: integer}
+        stream_url:  {type: string, format: uri, description: SSE progress stream}
+
+    DetectionResult:
+      type: object
+      properties:
+        job_id:            {type: string, format: uuid}
+        content_type:      {type: string}
+        authenticity_score:
+          type:    number
+          minimum: 0.0
+          maximum: 1.0
+          description: Calibrated AI probability. 0=human, 1=AI.
+        label:
+          type: string
+          enum: [AI, HUMAN, UNCERTAIN]
+        confidence:
+          type:    number
+          minimum: 0.0
+          maximum: 1.0
+        confidence_level:  {type: string, enum: [high, medium, low]}
+        processing_ms:     {type: integer}
+        layer_scores:
+          type: object
+          additionalProperties: {type: number}
+          description: Per-layer detection scores
+        model_attribution:
+          $ref: "#/components/schemas/ModelAttribution"
+        watermark:
+          $ref: "#/components/schemas/WatermarkInfo"
+        evidence_summary:
+          $ref: "#/components/schemas/EvidenceSummary"
+        flagged_segments:
+          type: array
+          items: {$ref: "#/components/schemas/FlaggedSegment"}
+        verdict_explanation: {type: string}
+        report_id:           {type: string, format: uuid}
+        report_url:          {type: string, format: uri}
+
+    JobResponse:
+      type: object
+      properties:
+        job_id:        {type: string, format: uuid}
+        status:        {type: string, enum: [pending, processing, completed, failed]}
+        content_type:  {type: string}
+        created_at:    {type: string, format: date-time}
+        started_at:    {type: string, format: date-time, nullable: true}
+        completed_at:  {type: string, format: date-time, nullable: true}
+        error_message: {type: string, nullable: true}
+        result_url:    {type: string, format: uri, nullable: true}
+
+    ModelAttribution:
+      type: object
+      properties:
+        gpt_family:    {type: number, minimum: 0, maximum: 1}
+        claude_family: {type: number, minimum: 0, maximum: 1}
+        llama_family:  {type: number, minimum: 0, maximum: 1}
+        human:         {type: number, minimum: 0, maximum: 1}
+        other_ai:      {type: number, minimum: 0, maximum: 1}
+        primary:       {type: string}
+        confident:     {type: boolean}
+
+    WatermarkInfo:
+      type: object
+      properties:
+        watermark_detected:  {type: boolean}
+        watermark_type:      {type: string}
+        confidence:          {type: number}
+        survives_paraphrase: {type: boolean}
+
+    EvidenceSummary:
+      type: object
+      properties:
+        top_signals:
+          type: array
+          items:
+            type: object
+            properties:
+              signal:  {type: string}
+              value:   {type: string}
+              weight:  {type: string, enum: [high, medium, low]}
+        sentence_scores:
+          type: array
+          items:
+            type: object
+            properties:
+              text:  {type: string}
+              score: {type: number}
+
+    FlaggedSegment:
+      type: object
+      properties:
+        start_s:  {type: number, description: Start timestamp in seconds}
+        end_s:    {type: number}
+        score:    {type: number}
+        severity: {type: string, enum: [high, medium]}
+
+    DashboardStats:
+      type: object
+      properties:
+        period:           {type: string}
+        total_jobs:       {type: integer}
+        completed_jobs:   {type: integer}
+        ai_detected:      {type: integer}
+        human_detected:   {type: integer}
+        uncertain:        {type: integer}
+        detection_rate:   {type: number}
+        usage_pct:        {type: number, description: Fraction of tier quota used}
+        jobs_by_day:
+          type: array
+          items:
+            type: object
+            properties:
+              date:  {type: string, format: date}
+              count: {type: integer}
+
+    DataExport:
+      type: object
+      properties:
+        export_version: {type: string}
+        exported_at:    {type: string, format: date-time}
+        user:           {$ref: "#/components/schemas/UserResponse"}
+        analysis_jobs:
+          type: array
+          items: {type: object}
+        audit_log_count: {type: integer}
+
+    DeletionReceipt:
+      type: object
+      properties:
+        receipt_id:        {type: string, format: uuid}
+        user_id:           {type: string, format: uuid}
+        requested_at:      {type: string, format: date-time}
+        completed_at:      {type: string, format: date-time}
+        items_deleted:     {type: object, additionalProperties: {type: integer}}
+        storage_locations: {type: array, items: {type: string}}
+        confirmation:      {type: string}
+
+    Error:
+      type: object
+      properties:
+        detail:    {type: string}
+        code:      {type: string}
+        request_id: {type: string, format: uuid}

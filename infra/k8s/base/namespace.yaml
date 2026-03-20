@@ -1,0 +1,110 @@
+# Step 103: Kubernetes base manifests — Namespace, RBAC, ConfigMap, Secrets.
+# Applied to both staging and production via Kustomize overlays.
+# Usage: kubectl apply -k infra/k8s/overlays/production
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: authentiguard
+  labels:
+    app.kubernetes.io/name: authentiguard
+    app.kubernetes.io/managed-by: kustomize
+---
+# ── Service Account ────────────────────────────────────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: authentiguard
+  namespace: authentiguard
+  annotations:
+    # IRSA: allows pods to assume an IAM role for S3/SES access
+    eks.amazonaws.com/role-arn: "${AWS_ROLE_ARN}"
+automountServiceAccountToken: true
+---
+# ── RBAC: allow pods to read their own config ─────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: authentiguard-pod-reader
+  namespace: authentiguard
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: authentiguard-pod-reader
+  namespace: authentiguard
+subjects:
+  - kind: ServiceAccount
+    name: authentiguard
+    namespace: authentiguard
+roleRef:
+  kind: Role
+  name: authentiguard-pod-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# ── ConfigMap: non-secret environment configuration ────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentiguard-config
+  namespace: authentiguard
+data:
+  APP_ENV:                      "production"
+  APP_DEBUG:                    "false"
+  LOG_LEVEL:                    "INFO"
+  LOG_FORMAT:                   "json"
+  CELERY_WORKER_CONCURRENCY:    "4"
+  CELERY_MAX_TASKS_PER_CHILD:   "500"
+  MODEL_CACHE_DIR:              "/app/model_cache"
+  ONNX_PROVIDERS:               "CUDAExecutionProvider,CPUExecutionProvider"
+  UPLOAD_MAX_SIZE_MB:           "100"
+  UPLOAD_RETENTION_DAYS:        "30"
+  REPORT_RETENTION_DAYS:        "365"
+  RATE_LIMIT_ENABLED:           "true"
+  CORS_ALLOW_ORIGINS:           "https://app.authentiguard.io"
+  MLFLOW_TRACKING_URI:          "http://mlflow:5000"
+  PROMETHEUS_ENABLED:           "true"
+  PROMETHEUS_PORT:              "9090"
+---
+# ── External Secret (references AWS Secrets Manager) ──────────
+# Uses the External Secrets Operator (ESO): https://external-secrets.io
+# Install: helm install eso external-secrets/external-secrets -n external-secrets
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: authentiguard-secrets
+  namespace: authentiguard
+spec:
+  refreshInterval: 5m
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+  target:
+    name: authentiguard-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: DATABASE_URL
+      remoteRef: {key: "authentiguard/prod", property: "DATABASE_URL"}
+    - secretKey: REDIS_URL
+      remoteRef: {key: "authentiguard/prod", property: "REDIS_URL"}
+    - secretKey: JWT_SECRET_KEY
+      remoteRef: {key: "authentiguard/prod", property: "JWT_SECRET_KEY"}
+    - secretKey: APP_SECRET_KEY
+      remoteRef: {key: "authentiguard/prod", property: "APP_SECRET_KEY"}
+    - secretKey: ENCRYPTION_KEY
+      remoteRef: {key: "authentiguard/prod", property: "ENCRYPTION_KEY"}
+    - secretKey: AWS_ACCESS_KEY_ID
+      remoteRef: {key: "authentiguard/prod", property: "AWS_ACCESS_KEY_ID"}
+    - secretKey: AWS_SECRET_ACCESS_KEY
+      remoteRef: {key: "authentiguard/prod", property: "AWS_SECRET_ACCESS_KEY"}
+    - secretKey: S3_BUCKET_UPLOADS
+      remoteRef: {key: "authentiguard/prod", property: "S3_BUCKET_UPLOADS"}
+    - secretKey: S3_BUCKET_REPORTS
+      remoteRef: {key: "authentiguard/prod", property: "S3_BUCKET_REPORTS"}

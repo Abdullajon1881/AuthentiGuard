@@ -1,0 +1,43 @@
+# Step 105: Kustomize overlay for the STAGING environment.
+# Lower replicas, debug logging, relaxed resource limits.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: authentiguard-staging
+
+resources:
+  - ../../base/namespace.yaml
+  - ../../base/deployments.yaml
+
+images:
+  - name: "${ECR_REGISTRY}/authentiguard-api"
+    newTag: "${IMAGE_TAG}"
+  - name: "${ECR_REGISTRY}/authentiguard-worker"
+    newTag: "${IMAGE_TAG}"
+
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: api
+        namespace: authentiguard-staging
+      spec:
+        replicas: 1
+
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: worker-cpu
+        namespace: authentiguard-staging
+      spec:
+        replicas: 1
+
+configMapGenerator:
+  - name: authentiguard-config
+    behavior: merge
+    literals:
+      - APP_ENV=staging
+      - LOG_LEVEL=DEBUG
+      - CELERY_WORKER_CONCURRENCY=2

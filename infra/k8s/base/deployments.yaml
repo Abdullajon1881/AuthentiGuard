@@ -1,0 +1,357 @@
+# Step 104: Kubernetes Deployments, Services, and HPAs.
+#
+# Services deployed:
+#   api           — FastAPI backend   (CPU, 2–10 replicas)
+#   worker-cpu    — Celery CPU workers (text, code, image)  (2–20 replicas)
+#   worker-gpu    — Celery GPU workers (video, audio)       (1–8 replicas, GPU nodes)
+#   frontend      — Next.js SSR         (2–6 replicas)
+#   flower        — Celery monitoring   (1 replica)
+#   mlflow        — Experiment tracking (1 replica)
+---
+# ════════════════════════════════════════════════════
+# FastAPI Backend
+# ════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: authentiguard
+  labels:
+    app: api
+    version: "${IMAGE_TAG}"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 0        # zero-downtime rolling deploys
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path:   "/metrics"
+        prometheus.io/port:   "8000"
+    spec:
+      serviceAccountName: authentiguard
+      terminationGracePeriodSeconds: 30
+      # Spread across AZs for HA
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app: api}
+      containers:
+        - name: api
+          image: "${ECR_REGISTRY}/authentiguard-api:${IMAGE_TAG}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef: {name: authentiguard-config}
+            - secretRef:    {name: authentiguard-secrets}
+          resources:
+            requests: {cpu: "500m", memory: "512Mi"}
+            limits:   {cpu: "2000m", memory: "2Gi"}
+          readinessProbe:
+            httpGet: {path: /health/ready, port: 8000}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /health/live, port: 8000}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 3
+          startupProbe:
+            httpGet: {path: /health/live, port: 8000}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 24    # 2 min startup budget
+          volumeMounts:
+            - name: model-cache
+              mountPath: /app/model_cache
+      volumes:
+        - name: model-cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: authentiguard
+spec:
+  selector: {app: api}
+  ports:
+    - port: 80
+      targetPort: 8000
+      name: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-hpa
+  namespace: authentiguard
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300   # 5 min cooldown prevents thrashing
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+---
+# ════════════════════════════════════════════════════
+# Celery CPU Workers (text, code, image, metadata)
+# ════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-cpu
+  namespace: authentiguard
+  labels:
+    app: worker-cpu
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: worker-cpu
+  template:
+    metadata:
+      labels:
+        app: worker-cpu
+    spec:
+      serviceAccountName: authentiguard
+      terminationGracePeriodSeconds: 120   # finish in-progress tasks
+      containers:
+        - name: worker
+          image: "${ECR_REGISTRY}/authentiguard-worker:${IMAGE_TAG}"
+          command:
+            - celery
+            - -A
+            - backend.app.workers.celery_app
+            - worker
+            - --queues=text_queue,code_queue,image_queue,metadata_queue,webhook_queue
+            - --concurrency=4
+            - --prefetch-multiplier=1    # one task at a time for fairness
+            - --max-tasks-per-child=500  # restart worker after N tasks (memory safety)
+            - --loglevel=INFO
+          envFrom:
+            - configMapRef: {name: authentiguard-config}
+            - secretRef:    {name: authentiguard-secrets}
+          resources:
+            requests: {cpu: "1000m", memory: "2Gi"}
+            limits:   {cpu: "4000m", memory: "8Gi"}
+          volumeMounts:
+            - name: model-cache
+              mountPath: /app/model_cache
+          lifecycle:
+            preStop:
+              exec:
+                command: ["celery", "-A", "backend.app.workers.celery_app",
+                          "control", "shutdown"]
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim: {claimName: model-cache-pvc}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker-cpu-hpa
+  namespace: authentiguard
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worker-cpu
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    # Scale on Celery queue depth via KEDA (preferred) or CPU
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+# ════════════════════════════════════════════════════
+# Celery GPU Workers (audio, video deepfake detection)
+# ════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-gpu
+  namespace: authentiguard
+  labels:
+    app: worker-gpu
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-gpu
+  template:
+    metadata:
+      labels:
+        app: worker-gpu
+    spec:
+      serviceAccountName: authentiguard
+      terminationGracePeriodSeconds: 300   # GPU tasks take longer
+      nodeSelector:
+        # Only schedule on GPU nodes (EKS managed node group "gpu")
+        node.kubernetes.io/instance-type: "g4dn.xlarge"
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: worker-gpu
+          image: "${ECR_REGISTRY}/authentiguard-worker-gpu:${IMAGE_TAG}"
+          command:
+            - celery
+            - -A
+            - backend.app.workers.celery_app
+            - worker
+            - --queues=audio_queue,video_queue
+            - --concurrency=2           # 2 tasks/GPU (memory constrained)
+            - --prefetch-multiplier=1
+            - --max-tasks-per-child=100
+            - --loglevel=INFO
+          envFrom:
+            - configMapRef: {name: authentiguard-config}
+            - secretRef:    {name: authentiguard-secrets}
+          resources:
+            requests:
+              cpu:             "2000m"
+              memory:          "8Gi"
+              nvidia.com/gpu:  "1"
+            limits:
+              cpu:             "4000m"
+              memory:          "16Gi"
+              nvidia.com/gpu:  "1"
+          volumeMounts:
+            - name: model-cache
+              mountPath: /app/model_cache
+            - name: gpu-shm            # shared memory for CUDA multiprocessing
+              mountPath: /dev/shm
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim: {claimName: model-cache-pvc}
+        - name: gpu-shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker-gpu-hpa
+  namespace: authentiguard
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worker-gpu
+  minReplicas: 1
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+---
+# ════════════════════════════════════════════════════
+# Frontend (Next.js SSR)
+# ════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: authentiguard
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: "${ECR_REGISTRY}/authentiguard-frontend:${IMAGE_TAG}"
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "https://api.authentiguard.io"
+            - name: NODE_ENV
+              value: "production"
+          resources:
+            requests: {cpu: "200m", memory: "256Mi"}
+            limits:   {cpu: "1000m", memory: "1Gi"}
+          readinessProbe:
+            httpGet: {path: /, port: 3000}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: authentiguard
+spec:
+  selector: {app: frontend}
+  ports:
+    - port: 80
+      targetPort: 3000
+---
+# ════════════════════════════════════════════════════
+# Model cache PersistentVolumeClaim (shared read-only)
+# ════════════════════════════════════════════════════
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-cache-pvc
+  namespace: authentiguard
+spec:
+  accessModes: [ReadWriteMany]   # EFS CSI driver required for RWX
+  storageClassName: efs-sc
+  resources:
+    requests:
+      storage: 50Gi              # DeBERTa + Wav2Vec2 + EfficientNet ≈ 12GB

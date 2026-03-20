@@ -1,0 +1,85 @@
+# Step 105: Kustomize overlay for the PRODUCTION environment.
+#
+# Applies production-specific patches on top of the base manifests:
+#   - Higher replica counts and resource limits
+#   - Production image tags
+#   - Stricter Pod Disruption Budgets
+#   - Network Policies
+#   - Production ingress with TLS
+#
+# Usage:
+#   kubectl apply -k infra/k8s/overlays/production
+#   kustomize build infra/k8s/overlays/production | kubectl apply -f -
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: authentiguard
+
+resources:
+  - ../../base/namespace.yaml
+  - ../../base/deployments.yaml
+  - ingress.yaml
+  - pdb.yaml
+  - network-policy.yaml
+
+images:
+  - name: "${ECR_REGISTRY}/authentiguard-api"
+    newTag: "${IMAGE_TAG}"
+  - name: "${ECR_REGISTRY}/authentiguard-worker"
+    newTag: "${IMAGE_TAG}"
+  - name: "${ECR_REGISTRY}/authentiguard-worker-gpu"
+    newTag: "${IMAGE_TAG}"
+  - name: "${ECR_REGISTRY}/authentiguard-frontend"
+    newTag: "${IMAGE_TAG}"
+
+patches:
+  # Scale up API for production
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: api
+        namespace: authentiguard
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+              - name: api
+                resources:
+                  requests:
+                    cpu: "1000m"
+                    memory: "1Gi"
+                  limits:
+                    cpu: "4000m"
+                    memory: "4Gi"
+
+  # Scale up CPU workers for production
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: worker-cpu
+        namespace: authentiguard
+      spec:
+        replicas: 4
+        template:
+          spec:
+            containers:
+              - name: worker
+                resources:
+                  requests:
+                    cpu: "2000m"
+                    memory: "4Gi"
+                  limits:
+                    cpu: "8000m"
+                    memory: "16Gi"
+
+configMapGenerator:
+  - name: authentiguard-config
+    behavior: merge
+    literals:
+      - APP_ENV=production
+      - LOG_LEVEL=WARNING
+      - CELERY_WORKER_CONCURRENCY=8

@@ -1,0 +1,220 @@
+# Step 106: Helm chart values.yaml
+# Override per environment:
+#   helm upgrade --install authentiguard ./infra/k8s/helm/authentiguard \
+#     -f values.yaml \
+#     -f values.production.yaml \
+#     --set image.tag=$(git rev-parse --short HEAD)
+# ─────────────────────────────────────────────────────────────
+
+global:
+  registry:    ""            # ECR registry prefix; set per-environment
+  imageTag:    "latest"
+  pullPolicy:  IfNotPresent
+  namespace:   authentiguard
+
+# ── Image configuration ───────────────────────────────────────
+image:
+  api:
+    repository: authentiguard-api
+    tag:        ""            # defaults to global.imageTag
+  worker:
+    repository: authentiguard-worker
+  workerGpu:
+    repository: authentiguard-worker-gpu
+  frontend:
+    repository: authentiguard-frontend
+
+# ── API service ───────────────────────────────────────────────
+api:
+  enabled:    true
+  replicas:   3
+
+  resources:
+    requests: {cpu: "500m",  memory: "512Mi"}
+    limits:   {cpu: "2000m", memory: "2Gi"}
+
+  hpa:
+    enabled:    true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUPercent:    65
+    targetMemoryPercent: 75
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  env:
+    APP_ENV:   production
+    LOG_LEVEL: INFO
+
+# ── Celery workers ────────────────────────────────────────────
+workerCpu:
+  enabled:    true
+  replicas:   3
+  concurrency: 4
+
+  queues:
+    - text_queue
+    - code_queue
+    - image_queue
+    - metadata_queue
+    - webhook_queue
+
+  resources:
+    requests: {cpu: "1000m", memory: "2Gi"}
+    limits:   {cpu: "4000m", memory: "8Gi"}
+
+  hpa:
+    enabled:     true
+    minReplicas: 2
+    maxReplicas: 20
+    targetCPUPercent: 70
+
+workerGpu:
+  enabled:     true
+  replicas:    1
+  concurrency: 2
+
+  queues:
+    - audio_queue
+    - video_queue
+
+  nodeSelector:
+    node.kubernetes.io/instance-type: "g4dn.xlarge"
+
+  tolerations:
+    - key: "nvidia.com/gpu"
+      operator: Exists
+      effect: NoSchedule
+
+  resources:
+    requests:
+      cpu:            "2000m"
+      memory:         "8Gi"
+      nvidia.com/gpu: "1"
+    limits:
+      cpu:            "4000m"
+      memory:         "16Gi"
+      nvidia.com/gpu: "1"
+
+  hpa:
+    enabled:     true
+    minReplicas: 1
+    maxReplicas: 8
+
+# ── Frontend ──────────────────────────────────────────────────
+frontend:
+  enabled:  true
+  replicas: 2
+
+  resources:
+    requests: {cpu: "200m",  memory: "256Mi"}
+    limits:   {cpu: "1000m", memory: "1Gi"}
+
+  env:
+    NODE_ENV: production
+    NEXT_PUBLIC_API_URL: "https://api.authentiguard.io"
+
+# ── Ingress ───────────────────────────────────────────────────
+ingress:
+  enabled:      true
+  class:        alb
+  scheme:       internet-facing
+
+  hosts:
+    api:      api.authentiguard.io
+    frontend: app.authentiguard.io
+
+  tls:
+    enabled:       true
+    acmCertArn:    ""   # set in values.production.yaml
+
+  waf:
+    enabled:    true
+    aclArn:     ""     # set in values.production.yaml
+
+# ── Model cache volume ────────────────────────────────────────
+modelCache:
+  storageClass:   efs-sc
+  size:           50Gi
+  accessMode:     ReadWriteMany
+
+# ── Monitoring ────────────────────────────────────────────────
+monitoring:
+  enabled: true
+
+  prometheus:
+    enabled: true
+    port:    9090
+    scrape:  true
+
+  grafana:
+    enabled:       true
+    adminPassword: ""    # set via secret
+
+  alerting:
+    # PagerDuty integration for critical alerts
+    pagerdutyIntegrationKey: ""
+
+# ── Internal dependencies (dev/staging only) ─────────────────
+# Set to false for production (use AWS RDS + ElastiCache instead)
+postgresql:
+  enabled:         false
+  auth:
+    database:      authentiguard
+    username:      authentiguard
+    existingSecret: authentiguard-secrets
+    secretKeys:
+      adminPasswordKey: POSTGRES_PASSWORD
+      userPasswordKey:  DATABASE_PASSWORD
+  primary:
+    resources:
+      requests: {cpu: "500m", memory: "1Gi"}
+      limits:   {cpu: "2000m", memory: "4Gi"}
+
+redis:
+  enabled:         false
+  auth:
+    existingSecret: authentiguard-secrets
+    existingSecretPasswordKey: REDIS_PASSWORD
+  master:
+    resources:
+      requests: {cpu: "200m", memory: "256Mi"}
+      limits:   {cpu: "500m", memory: "1Gi"}
+
+# ── KEDA (queue-based autoscaling) ────────────────────────────
+keda:
+  enabled: true
+  # ScaledObject: scale CPU workers based on Celery queue depth
+  celeryScaler:
+    pollingInterval: 15
+    cooldownPeriod:  60
+    minReplicaCount: 2
+    maxReplicaCount: 20
+    queueLength:     5      # 1 replica per 5 pending tasks
+
+# ── PodDisruptionBudgets ──────────────────────────────────────
+podDisruptionBudget:
+  api:
+    minAvailable: 2
+  workerCpu:
+    minAvailable: 1
+
+# ── Security ──────────────────────────────────────────────────
+securityContext:
+  runAsNonRoot:          true
+  runAsUser:             1000
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+
+serviceAccount:
+  create:      true
+  name:        authentiguard
+  irsaRoleArn: ""   # set in values.production.yaml
+
+networkPolicy:
+  enabled: true
+  defaultDenyIngress: true

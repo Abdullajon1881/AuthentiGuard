@@ -1,0 +1,43 @@
+# MLflow experiment tracking configuration
+# Set MLFLOW_TRACKING_URI in .env to point to your server.
+# All training runs use this shared config via the mlflow_config module.
+
+default_experiment: authentiguard
+artifact_location: s3://mlflow-artifacts
+
+experiments:
+  text_detector:
+    name: text-detector
+    tags:
+      team: ai
+      modality: text
+
+  audio_detector:
+    name: audio-detector
+    tags:
+      team: ai
+      modality: audio
+
+  video_detector:
+    name: video-detector
+    tags:
+      team: ai
+      modality: video
+
+  image_detector:
+    name: image-detector
+    tags:
+      team: ai
+      modality: image
+
+  code_detector:
+    name: code-detector
+    tags:
+      team: ai
+      modality: code
+
+  ensemble:
+    name: ensemble-engine
+    tags:
+      team: ai
+      modality: multi

@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Node
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+.env.local
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# ML artifacts (large — use DVC)
+*.pt
+*.pth
+*.pkl
+*.onnx
+*.bin
+model_cache/
+checkpoints/
+datasets/human/
+datasets/ai-generated/
+datasets/adversarial/
+
+# Terraform state (use remote backend)
+*.tfstate
+*.tfstate.backup
+*.tfplan
+.terraform/
+.terraform.lock.hcl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+reports/
+*.html
+!docs/**/*.html
+
+# Docker volumes
+postgres_data/
+redis_data/
+minio_data/

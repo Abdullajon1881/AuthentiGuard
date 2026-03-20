@@ -1,0 +1,143 @@
+# Step 108: GitOps continuous deployment with ArgoCD.
+#
+# Promotion pipeline:
+#   feature/* → develop → staging deploy (auto)
+#                       → integration tests (auto)
+#                       → production deploy (manual approval)
+#
+# ArgoCD ApplicationSet covers staging + production from one definition.
+# Each environment tracks a different Git branch/tag:
+#   staging:    tracks `develop` branch (auto-sync)
+#   production: tracks semver tags (manual sync with approval gate)
+#
+# Rollback: ArgoCD preserves history; `argocd app rollback` restores
+#           the previous Kubernetes state in <60s.
+---
+# ── ArgoCD Project — scope and RBAC ───────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: authentiguard
+  namespace: argocd
+spec:
+  description: AuthentiGuard AI authenticity detection platform
+  sourceRepos:
+    - "https://github.com/authentiguard/authentiguard"
+    - "https://charts.bitnami.com/bitnami"
+    - "https://prometheus-community.github.io/helm-charts"
+  destinations:
+    - namespace: authentiguard
+      server: https://kubernetes.default.svc
+    - namespace: authentiguard-staging
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  orphanedResources:
+    warn: true
+---
+# ── ApplicationSet — one definition drives all environments ───
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: authentiguard
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - env:        staging
+            namespace:  authentiguard-staging
+            targetRevision: develop
+            autoSync:   "true"
+            selfHeal:   "true"
+          - env:        production
+            namespace:  authentiguard
+            targetRevision: HEAD     # updated by CI to point at release tag
+            autoSync:   "false"      # production requires manual approval
+            selfHeal:   "true"
+
+  template:
+    metadata:
+      name: "authentiguard-{{env}}"
+      namespace: argocd
+      annotations:
+        # Slack notifications on sync events
+        notifications.argoproj.io/subscribe.on-sync-succeeded.slack: "deployments"
+        notifications.argoproj.io/subscribe.on-sync-failed.slack:    "incidents"
+        notifications.argoproj.io/subscribe.on-health-degraded.slack: "incidents"
+    spec:
+      project: authentiguard
+
+      source:
+        repoURL:        https://github.com/authentiguard/authentiguard
+        targetRevision: "{{targetRevision}}"
+        path:           infra/k8s/overlays/{{env}}
+
+      destination:
+        server:    https://kubernetes.default.svc
+        namespace: "{{namespace}}"
+
+      syncPolicy:
+        automated:
+          prune:    true
+          selfHeal: "{{selfHeal}}"
+        syncOptions:
+          - CreateNamespace=true
+          - ApplyOutOfSyncOnly=true    # only sync changed resources
+          - PrunePropagationPolicy=foreground
+          - RespectIgnoreDifferences=true
+        retry:
+          limit: 5
+          backoff:
+            duration:    5s
+            factor:      2
+            maxDuration: 3m
+
+      # Ignore HPA current replicas (managed by autoscaler, not Git)
+      ignoreDifferences:
+        - group: apps
+          kind:  Deployment
+          jsonPointers: ["/spec/replicas"]
+        - group: autoscaling
+          kind:  HorizontalPodAutoscaler
+          jsonPointers: ["/spec/minReplicas", "/spec/maxReplicas"]
+---
+# ── ArgoCD Image Updater ───────────────────────────────────────
+# Automatically updates the image tag in Git when a new ECR image is pushed.
+# This completes the GitOps loop: CI builds → ECR push → Image Updater
+# opens a PR (or commits directly to develop) → ArgoCD syncs.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentiguard-staging
+  namespace: argocd
+  annotations:
+    # Image Updater: watch ECR for new semver tags
+    argocd-image-updater.argoproj.io/image-list: |
+      api=${ECR_REGISTRY}/authentiguard-api,
+      worker=${ECR_REGISTRY}/authentiguard-worker,
+      frontend=${ECR_REGISTRY}/authentiguard-frontend
+    argocd-image-updater.argoproj.io/api.update-strategy:      semver
+    argocd-image-updater.argoproj.io/worker.update-strategy:   semver
+    argocd-image-updater.argoproj.io/frontend.update-strategy: semver
+    argocd-image-updater.argoproj.io/write-back-method:        git
+    argocd-image-updater.argoproj.io/git-branch:               develop
+spec:
+  project: authentiguard
+  source:
+    repoURL:        https://github.com/authentiguard/authentiguard
+    targetRevision: develop
+    path:           infra/k8s/overlays/staging
+  destination:
+    server:    https://kubernetes.default.svc
+    namespace: authentiguard-staging
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}

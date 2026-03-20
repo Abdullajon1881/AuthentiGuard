@@ -1,0 +1,46 @@
+apiVersion: v2
+name: authentiguard
+description: >
+  AuthentiGuard — AI content authenticity detection platform.
+  Deploys the full stack: FastAPI API, Celery workers (CPU + GPU),
+  Next.js frontend, PostgreSQL, Redis, MLflow, Flower, and Prometheus.
+
+type: application
+
+# Chart version — bump on every Helm chart change (SemVer)
+version: 0.1.0
+
+# App version — tracks the application release
+appVersion: "0.1.0"
+
+keywords:
+  - ai-detection
+  - deepfake
+  - authenticity
+  - content-moderation
+
+maintainers:
+  - name: AuthentiGuard Engineering
+    email: eng@authentiguard.io
+
+dependencies:
+  # PostgreSQL (Bitnami) — for development/staging only
+  # Production uses AWS RDS (external)
+  - name: postgresql
+    version: "15.5.0"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled
+    alias: postgresql
+
+  # Redis (Bitnami) — for development/staging only
+  # Production uses AWS ElastiCache (external)
+  - name: redis
+    version: "18.12.1"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled
+
+  # Prometheus + Grafana (Prometheus community stack)
+  - name: kube-prometheus-stack
+    version: "61.3.0"
+    repository: "https://prometheus-community.github.io/helm-charts"
+    condition: monitoring.enabled

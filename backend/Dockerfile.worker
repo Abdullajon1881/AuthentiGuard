@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev libmagic1 ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --gid 1001 appgroup && \
+    useradd --uid 1001 --gid appgroup --shell /bin/bash --create-home appuser
+
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY ai/requirements.txt ./ai-requirements.txt
+RUN pip install --no-cache-dir -r ai-requirements.txt || true
+
+COPY --chown=appuser:appgroup . .
+
+USER appuser
+
+CMD ["celery", "-A", "backend.app.workers.celery_app", "worker", \
+     "--queues=text_queue,code_queue,image_queue,metadata_queue,webhook_queue", \
+     "--concurrency=4", "--loglevel=INFO"]

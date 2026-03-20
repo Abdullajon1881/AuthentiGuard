@@ -1,0 +1,42 @@
+stages:
+  human_ingestion:
+    cmd: python -m ai.text-detector.data_pipeline.run_pipeline --human
+    deps:
+      - ai/text-detector/data_pipeline/sources/human_ingestion.py
+      - ai/text-detector/data_pipeline/config.py
+    outs:
+      - datasets/human/human.jsonl
+
+  ai_generation:
+    cmd: python -m ai.text-detector.data_pipeline.run_pipeline --ai
+    deps:
+      - ai/text-detector/data_pipeline/generators/ai_generator.py
+      - ai/text-detector/data_pipeline/config.py
+    outs:
+      - datasets/ai-generated/ai_generated.jsonl
+
+  adversarial_generation:
+    cmd: python -m ai.text-detector.data_pipeline.run_pipeline --adversarial
+    deps:
+      - ai/text-detector/data_pipeline/generators/adversarial_generator.py
+      - datasets/ai-generated/ai_generated.jsonl
+      - datasets/human/human.jsonl
+    outs:
+      - datasets/adversarial/adversarial.jsonl
+
+  preprocessing:
+    cmd: python -m ai.text-detector.data_pipeline.run_pipeline --preprocess
+    deps:
+      - ai/text-detector/data_pipeline/preprocessing/preprocessor.py
+      - datasets/human/human.jsonl
+      - datasets/ai-generated/ai_generated.jsonl
+      - datasets/adversarial/adversarial.jsonl
+    outs:
+      - datasets/processed/train.parquet
+      - datasets/processed/val.parquet
+      - datasets/processed/test.parquet
+      - datasets/processed/dataset_card.json
+
+metrics:
+  - datasets/processed/dataset_card.json:
+      cache: false

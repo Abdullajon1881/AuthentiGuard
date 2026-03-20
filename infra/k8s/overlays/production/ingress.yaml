@@ -1,0 +1,121 @@
+# Production Ingress — AWS ALB with TLS termination, WAF, and sticky sessions
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: authentiguard-ingress
+  namespace: authentiguard
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443},{"HTTP":80}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: "${ACM_CERT_ARN}"
+    # WAF association (rate limiting, SQL injection, XSS protection)
+    alb.ingress.kubernetes.io/wafv2-acl-arn: "${WAF_ACL_ARN}"
+    # Compression
+    alb.ingress.kubernetes.io/load-balancer-attributes: >-
+      routing.http.response.server.enabled=false,
+      routing.http.drop_invalid_header_fields.enabled=true
+    # Access logs to S3
+    alb.ingress.kubernetes.io/load-balancer-attributes: >-
+      access_logs.s3.enabled=true,
+      access_logs.s3.bucket=${ALB_ACCESS_LOG_BUCKET}
+spec:
+  rules:
+    - host: api.authentiguard.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port: {name: http}
+    - host: app.authentiguard.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port: {number: 80}
+---
+# Pod Disruption Budgets — prevent >1 API pod being down during node drain
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-pdb
+  namespace: authentiguard
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: {app: api}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-cpu-pdb
+  namespace: authentiguard
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: worker-cpu}
+---
+# NetworkPolicy — default deny all ingress; whitelist only what's needed
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: authentiguard
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# Allow ingress from ALB controller to API pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-alb-to-api
+  namespace: authentiguard
+spec:
+  podSelector:
+    matchLabels: {app: api}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+# Allow API → Workers (via Redis/Celery, not direct — but allow DNS)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-internal-dns
+  namespace: authentiguard
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow HTTPS egress for S3, SES, external APIs
+    - ports:
+        - protocol: TCP
+          port: 443
+    # Allow PostgreSQL (RDS in VPC)
+    - ports:
+        - protocol: TCP
+          port: 5432
+    # Allow Redis (ElastiCache in VPC)
+    - ports:
+        - protocol: TCP
+          port: 6379

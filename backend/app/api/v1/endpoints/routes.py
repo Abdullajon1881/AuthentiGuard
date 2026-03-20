@@ -1,0 +1,395 @@
+"""
+API endpoints — auth, analysis submission, results polling, reports, webhooks.
+Every endpoint has input validation, error handling, and rate limiting (via middleware).
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ...core.database import get_db
+from ...core.security import (
+    create_access_token,
+    create_refresh_token,
+    hash_password,
+    rotate_refresh_token,
+    verify_password,
+)
+from ...models.models import (
+    ContentType, DetectionJob, DetectionResult, JobStatus, User, UserRole, UserTier,
+)
+from ...schemas.schemas import (
+    AnalysisJobResponse,
+    DetectionResultResponse,
+    ErrorResponse,
+    JobStatusResponse,
+    LayerScoresSchema,
+    LoginRequest,
+    ModelAttributionSchema,
+    RefreshRequest,
+    RegisterRequest,
+    TextSubmitRequest,
+    TokenResponse,
+    UserResponse,
+    UsageStatsResponse,
+)
+from ...services.upload_service import store_upload
+from ...workers.celery_app import CONTENT_TYPE_TO_QUEUE, TIER_TO_PRIORITY
+from ...workers.text_worker import run_text_detection
+from ..v1.deps import CurrentUser
+
+router = APIRouter()
+
+
+# ═══════════════════════════════════════════════════════════════
+# AUTH
+# ═══════════════════════════════════════════════════════════════
+
+@router.post(
+    "/auth/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["auth"],
+)
+async def register(
+    body: RegisterRequest,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    existing = await db.execute(select(User).where(User.email == body.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists",
+        )
+    user = User(
+        email=body.email,
+        hashed_password=hash_password(body.password),
+        full_name=body.full_name,
+        role=UserRole.API_CONSUMER,
+        tier=UserTier.FREE,
+        consent_given=body.consent_given,
+        consent_at=datetime.now(timezone.utc) if body.consent_given else None,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.post("/auth/login", response_model=TokenResponse, tags=["auth"])
+async def login(
+    body: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+
+    if not user or not verify_password(body.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is inactive")
+
+    from ...core.config import get_settings
+    settings = get_settings()
+
+    access_token  = create_access_token(str(user.id), user.role.value, user.email)
+    refresh_token = await create_refresh_token(str(user.id))
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+
+@router.post("/auth/refresh", response_model=TokenResponse, tags=["auth"])
+async def refresh_token(
+    body: RefreshRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    """Step 25: Refresh token rotation — invalidate old, issue new pair."""
+    try:
+        user_id, new_refresh = await rotate_refresh_token(body.refresh_token)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc))
+
+    result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    from ...core.config import get_settings
+    settings = get_settings()
+
+    return TokenResponse(
+        access_token=create_access_token(str(user.id), user.role.value, user.email),
+        refresh_token=new_refresh,
+        expires_in=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+
+@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT, tags=["auth"])
+async def logout(body: RefreshRequest) -> None:
+    from ...core.security import revoke_refresh_token
+    await revoke_refresh_token(body.refresh_token)
+
+
+# ═══════════════════════════════════════════════════════════════
+# ANALYSIS — SUBMISSION
+# ═══════════════════════════════════════════════════════════════
+
+@router.post(
+    "/analyze/text",
+    response_model=AnalysisJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["analysis"],
+)
+async def submit_text(
+    body: TextSubmitRequest,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+) -> AnalysisJobResponse:
+    """Submit text/code paste for analysis. Returns a job_id to poll."""
+    import hashlib
+    content_type = ContentType(body.content_type)
+    content_hash = hashlib.sha256(body.text.encode()).hexdigest()
+
+    job = DetectionJob(
+        user_id=current_user.id,
+        content_type=content_type,
+        input_text=body.text,
+        content_hash=content_hash,
+        status=JobStatus.PENDING,
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    # Dispatch to Celery queue
+    priority = TIER_TO_PRIORITY.get(current_user.tier.value, 1)
+    task = run_text_detection.apply_async(
+        args=[str(job.id)],
+        queue="text",
+        priority=priority,
+    )
+    job.celery_task_id = task.id
+    await db.commit()
+
+    return AnalysisJobResponse(
+        job_id=job.id,
+        status=job.status.value,
+        content_type=content_type.value,
+        created_at=job.created_at,
+        poll_url=f"/api/v1/jobs/{job.id}",
+    )
+
+
+@router.post(
+    "/analyze/file",
+    response_model=AnalysisJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["analysis"],
+)
+async def submit_file(
+    file: UploadFile = File(...),
+    current_user: CurrentUser = Depends(),
+    db: AsyncSession = Depends(get_db),
+) -> AnalysisJobResponse:
+    """Upload a file (text, image, audio, video, code) for analysis."""
+    s3_key, content_hash, content_type, file_size = await store_upload(
+        file, str(current_user.id)
+    )
+
+    job = DetectionJob(
+        user_id=current_user.id,
+        content_type=content_type,
+        s3_key=s3_key,
+        file_name=file.filename,
+        file_size=file_size,
+        content_hash=content_hash,
+        status=JobStatus.PENDING,
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    # Route to appropriate queue based on content type
+    queue    = CONTENT_TYPE_TO_QUEUE.get(content_type.value, "text")
+    priority = TIER_TO_PRIORITY.get(current_user.tier.value, 1)
+
+    if queue == "text":
+        task = run_text_detection.apply_async(
+            args=[str(job.id)], queue=queue, priority=priority
+        )
+    else:
+        # Audio/video/image workers are added in Phases 6–8
+        from ...workers.celery_app import celery_app
+        task = celery_app.send_task(
+            f"workers.{queue}_worker.run_{queue}_detection",
+            args=[str(job.id)],
+            queue=queue,
+            priority=priority,
+        )
+
+    job.celery_task_id = task.id
+    await db.commit()
+
+    return AnalysisJobResponse(
+        job_id=job.id,
+        status=job.status.value,
+        content_type=content_type.value,
+        created_at=job.created_at,
+        poll_url=f"/api/v1/jobs/{job.id}",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# JOBS — POLLING
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/jobs/{job_id}", response_model=JobStatusResponse, tags=["jobs"])
+async def get_job_status(
+    job_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+) -> DetectionJob:
+    job = await _get_job_or_404(job_id, current_user.id, db)
+    return job
+
+
+@router.get(
+    "/jobs/{job_id}/result",
+    response_model=DetectionResultResponse,
+    tags=["jobs"],
+)
+async def get_job_result(
+    job_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+) -> DetectionResultResponse:
+    job = await _get_job_or_404(job_id, current_user.id, db)
+
+    if job.status != JobStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Job is not yet complete. Current status: {job.status.value}",
+        )
+    if not job.result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Result not found for this job",
+        )
+
+    r = job.result
+    return DetectionResultResponse(
+        job_id=job.id,
+        status=job.status.value,
+        content_type=job.content_type.value,
+        authenticity_score=r.authenticity_score,
+        confidence=r.confidence,
+        label=r.label,
+        layer_scores=LayerScoresSchema(**r.layer_scores),
+        sentence_scores=r.sentence_scores,
+        top_signals=r.evidence_summary.get("top_signals", []),
+        model_attribution=ModelAttributionSchema(**r.model_attribution),
+        processing_ms=r.processing_ms,
+        report_url=f"/api/v1/jobs/{job.id}/report" if r.report_s3_key else None,
+        created_at=job.created_at,
+        completed_at=job.completed_at,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# DASHBOARD
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/dashboard/stats", response_model=UsageStatsResponse, tags=["dashboard"])
+async def get_usage_stats(
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+) -> UsageStatsResponse:
+    from sqlalchemy import func
+    from ...core.config import get_settings
+    from ...workers.celery_app import TIER_TO_PRIORITY
+
+    settings = get_settings()
+
+    # Count all completed jobs
+    jobs_q = await db.execute(
+        select(DetectionJob).where(
+            DetectionJob.user_id == current_user.id,
+            DetectionJob.status == JobStatus.COMPLETED,
+        )
+    )
+    all_jobs = jobs_q.scalars().all()
+
+    # Get results for label counts
+    job_ids = [j.id for j in all_jobs]
+    results_q = await db.execute(
+        select(DetectionResult).where(DetectionResult.job_id.in_(job_ids))
+    ) if job_ids else None
+
+    results = results_q.scalars().all() if results_q else []
+    labels  = [r.label for r in results]
+    scores  = [r.authenticity_score for r in results]
+
+    tier_limit_map = {
+        "free": settings.RATE_LIMIT_FREE_TIER,
+        "pro":  settings.RATE_LIMIT_PRO_TIER,
+        "enterprise": settings.RATE_LIMIT_ENTERPRISE_TIER,
+    }
+
+    return UsageStatsResponse(
+        total_scans=len(all_jobs),
+        scans_this_month=len(all_jobs),   # TODO: filter by month
+        ai_detected=labels.count("AI"),
+        human_detected=labels.count("HUMAN"),
+        uncertain=labels.count("UNCERTAIN"),
+        avg_score=round(sum(scores) / len(scores), 4) if scores else None,
+        tier_limit=tier_limit_map.get(current_user.tier.value, 10),
+        tier_used=len(all_jobs),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# HEALTH CHECK
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/health", tags=["system"], include_in_schema=False)
+async def health() -> dict:
+    from ...core.redis import redis_ping
+    redis_ok = await redis_ping()
+    return {
+        "status":    "ok",
+        "redis":     "ok" if redis_ok else "degraded",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════════════════════
+
+async def _get_job_or_404(
+    job_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession,
+) -> DetectionJob:
+    result = await db.execute(
+        select(DetectionJob).where(
+            DetectionJob.id == job_id,
+            DetectionJob.user_id == user_id,
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    return job
