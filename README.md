@@ -1,29 +1,5 @@
 # AuthentiGuard — AI Authenticity Detection Platform
 
-> Multi-modal AI content detection: text, image, video, audio, and code.
-
-## Quick Start
-
-```bash
-# 1. Clone and enter the repo
-git clone https://github.com/your-org/authentiguard.git
-cd authentiguard
-
-# 2. Copy environment template and fill in all values
-cp .env.example .env
-
-# 3. Start the full local stack
-docker compose up --build
-
-# Services:
-#   Frontend  → http://localhost:3000
-#   Backend   → http://localhost:8000
-#   API docs  → http://localhost:8000/docs
-#   MLflow    → http://localhost:5000
-#   Flower    → http://localhost:5555
-#   MinIO     → http://localhost:9001
-```
-
 ## Monorepo Structure
 
 ```
