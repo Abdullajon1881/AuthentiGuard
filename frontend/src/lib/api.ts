@@ -151,6 +151,17 @@ export const analysis = {
     })
   },
 
+  async submitUrl(url: string): Promise<AnalysisJob> {
+    return apiFetch('/analyze/url', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    })
+  },
+
+  async getReport(jobId: string, format: 'json' | 'pdf' = 'json'): Promise<Record<string, unknown>> {
+    return apiFetch(`/jobs/${jobId}/report?format=${format}`)
+  },
+
   async getStatus(jobId: string): Promise<JobStatus_> {
     return apiFetch(`/jobs/${jobId}`)
   },

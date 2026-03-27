@@ -62,19 +62,19 @@ multiple system prompts to maximize diversity.
 
 ```bash
 # Full pipeline (first run):
-python -m ai.text-detector.data_pipeline.run_pipeline --all
+python -m ai.text_detector.data_pipeline.run_pipeline --all
 
 # Or with DVC (tracks outputs automatically):
 dvc repro
 
 # Scale to 1M samples:
-python -m ai.text-detector.data_pipeline.run_pipeline --all --target 1000000
+python -m ai.text_detector.data_pipeline.run_pipeline --all --target 1000000
 
 # Individual stages:
-python -m ai.text-detector.data_pipeline.run_pipeline --human
-python -m ai.text-detector.data_pipeline.run_pipeline --ai
-python -m ai.text-detector.data_pipeline.run_pipeline --adversarial
-python -m ai.text-detector.data_pipeline.run_pipeline --preprocess
+python -m ai.text_detector.data_pipeline.run_pipeline --human
+python -m ai.text_detector.data_pipeline.run_pipeline --ai
+python -m ai.text_detector.data_pipeline.run_pipeline --adversarial
+python -m ai.text_detector.data_pipeline.run_pipeline --preprocess
 ```
 
 ## DVC Usage

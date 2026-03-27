@@ -13,7 +13,7 @@ Step 91 — API rate limiting per tier
 
 Step 92 — Cryptographic digital signatures on every authenticity report
   Every report is signed with HMAC-SHA256.
-  Already implemented in ai/authenticity-engine/reports/integrity.py.
+  Already implemented in ai/authenticity_engine/reports/integrity.py.
   This module provides the asymmetric signing upgrade path (ECDSA P-256)
   for enterprise-grade non-repudiation.
 """

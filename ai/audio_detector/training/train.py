@@ -8,10 +8,10 @@ Phase 3 — Adversarial hardening with pitch-shifted and compressed audio
 Step 53: Calibrate all model outputs with Platt scaling + isotonic regression.
 
 Usage:
-    python -m ai.audio-detector.training.train \
+    python -m ai.audio_detector.training.train \
         --phase 2 \
         --data-dir datasets/audio \
-        --output-dir ai/audio-detector/checkpoints
+        --output-dir ai/audio_detector/checkpoints
 """
 
 from __future__ import annotations
@@ -278,7 +278,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train audio deepfake detector")
     parser.add_argument("--phase", type=int, choices=[1, 2, 3], required=True)
     parser.add_argument("--data-dir", type=Path, default=Path("datasets/audio"))
-    parser.add_argument("--output-dir", type=Path, default=Path("ai/audio-detector/checkpoints"))
+    parser.add_argument("--output-dir", type=Path, default=Path("ai/audio_detector/checkpoints"))
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=None)

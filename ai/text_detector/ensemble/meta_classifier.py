@@ -169,10 +169,10 @@ class MetaClassifier:
         # Training (run via training/train_meta.py):
         clf = MetaClassifier()
         clf.fit(X_train, y_train, X_val, y_val)
-        clf.save(Path("ai/text-detector/checkpoints/meta"))
+        clf.save(Path("ai/text_detector/checkpoints/meta"))
 
         # Inference:
-        clf = MetaClassifier.load(Path("ai/text-detector/checkpoints/meta"))
+        clf = MetaClassifier.load(Path("ai/text_detector/checkpoints/meta"))
         score = clf.predict(feature_vector)
     """
 

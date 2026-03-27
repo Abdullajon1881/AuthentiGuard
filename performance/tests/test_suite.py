@@ -8,13 +8,13 @@ Test pyramid:
   Load tests:        Locust (separate, Step 100).
 
 Coverage targets per module:
-  ai/text-detector:        ≥80%
-  ai/audio-detector:       ≥75%
-  ai/video-detector:       ≥75%
-  ai/image-detector:       ≥80%
-  ai/code-detector:        ≥85%
-  ai/ensemble-engine:      ≥80%
-  ai/authenticity-engine:  ≥85%
+  ai/text_detector:        ≥80%
+  ai/audio_detector:       ≥75%
+  ai/video_detector:       ≥75%
+  ai/image_detector:       ≥80%
+  ai/code_detector:        ≥85%
+  ai/ensemble_engine:      ≥80%
+  ai/authenticity_engine:  ≥85%
   backend/app:             ≥80%
   security:                ≥90%
 

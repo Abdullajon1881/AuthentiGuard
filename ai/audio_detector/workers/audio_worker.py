@@ -23,8 +23,8 @@ def _get_audio_detector():
     if _audio_detector is None:
         from ..audio_detector import AudioDetector
         _audio_detector = AudioDetector(
-            checkpoint_dir=Path("ai/audio-detector/checkpoints/phase3"),
-            calibration_path=Path("ai/audio-detector/checkpoints/calibration.pkl"),
+            checkpoint_dir=Path("ai/audio_detector/checkpoints/phase3"),
+            calibration_path=Path("ai/audio_detector/checkpoints/calibration.pkl"),
         )
         _audio_detector.load_models()
     return _audio_detector

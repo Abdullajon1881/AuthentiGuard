@@ -6,10 +6,10 @@ Phase 2 — Specialize: continue training with higher LR on domain data.
 Phase 3 — Adversarial hardening: fine-tune on adversarial samples only.
 
 Usage:
-    python -m ai.text-detector.training.train_transformer \
+    python -m ai.text_detector.training.train_transformer \
         --phase 1 \
         --data-dir datasets/processed \
-        --output-dir ai/text-detector/checkpoints/transformer \
+        --output-dir ai/text_detector/checkpoints/transformer \
         --model microsoft/deberta-v3-base \
         --epochs 3
 
@@ -217,7 +217,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--phase", type=int, choices=[1, 2, 3], required=True)
     parser.add_argument("--data-dir", type=Path, default=Path("datasets/processed"))
-    parser.add_argument("--output-dir", type=Path, default=Path("ai/text-detector/checkpoints/transformer"))
+    parser.add_argument("--output-dir", type=Path, default=Path("ai/text_detector/checkpoints/transformer"))
     parser.add_argument("--model", default="microsoft/deberta-v3-base")
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--batch-size", type=int, default=16)

@@ -133,8 +133,12 @@ export default function UploadModule({ onJobCreated, onError }: Props) {
         setStage(`Uploading ${file.name}…`)
         job = await analysis.submitFile(file)
 
+      } else if (mode === 'url') {
+        if (!url.trim()) { onError('Please enter a URL.'); return }
+        setStage('Fetching and analyzing URL…')
+        job = await analysis.submitUrl(url.trim())
       } else {
-        onError('URL analysis coming soon.')
+        onError('Unknown input mode.')
         return
       }
 

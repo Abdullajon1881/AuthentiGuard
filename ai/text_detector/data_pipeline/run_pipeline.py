@@ -3,16 +3,16 @@ Dataset pipeline orchestrator — Step 10–15 end-to-end.
 
 Usage:
     # Full pipeline (download + generate + preprocess):
-    python -m ai.text-detector.data_pipeline.run_pipeline --all
+    python -m ai.text_detector.data_pipeline.run_pipeline --all
 
     # Individual stages:
-    python -m ai.text-detector.data_pipeline.run_pipeline --human
-    python -m ai.text-detector.data_pipeline.run_pipeline --ai
-    python -m ai.text-detector.data_pipeline.run_pipeline --adversarial
-    python -m ai.text-detector.data_pipeline.run_pipeline --preprocess
+    python -m ai.text_detector.data_pipeline.run_pipeline --human
+    python -m ai.text_detector.data_pipeline.run_pipeline --ai
+    python -m ai.text_detector.data_pipeline.run_pipeline --adversarial
+    python -m ai.text_detector.data_pipeline.run_pipeline --preprocess
 
     # Scale targets:
-    python -m ai.text-detector.data_pipeline.run_pipeline --all --target 1000000
+    python -m ai.text_detector.data_pipeline.run_pipeline --all --target 1000000
 """
 
 from __future__ import annotations

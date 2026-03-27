@@ -1,0 +1,182 @@
+/* AuthentiGuard — Content script injected styles */
+
+/* Floating authenticity badge — injected next to analyzed content */
+.ag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 999999;
+  position: relative;
+}
+
+.ag-badge:hover {
+  opacity: 0.9;
+  transform: scale(1.05);
+}
+
+/* Label variants */
+.ag-badge--ai {
+  background: #7F1D1D;
+  color: #FCA5A5;
+  border: 1px solid #991B1B;
+}
+
+.ag-badge--human {
+  background: #14532D;
+  color: #86EFAC;
+  border: 1px solid #166534;
+}
+
+.ag-badge--uncertain {
+  background: #713F12;
+  color: #FDE68A;
+  border: 1px solid #854D0E;
+}
+
+/* Score indicator dot */
+.ag-badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ag-badge--ai .ag-badge__dot { background: #EF4444; }
+.ag-badge--human .ag-badge__dot { background: #22C55E; }
+.ag-badge--uncertain .ag-badge__dot { background: #F59E0B; }
+
+/* Detail overlay panel — shown on badge click */
+.ag-overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 380px;
+  height: 100vh;
+  background: #0F172A;
+  color: #E2E8F0;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+  z-index: 9999999;
+  overflow-y: auto;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  animation: ag-slide-in 0.25s ease-out;
+  padding: 20px;
+}
+
+@keyframes ag-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.ag-overlay__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: #94A3B8;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+
+.ag-overlay__close:hover { color: #F8FAFC; }
+
+.ag-overlay__title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: #F8FAFC;
+}
+
+.ag-overlay__score {
+  font-size: 48px;
+  font-weight: 800;
+  text-align: center;
+  margin: 20px 0;
+}
+
+.ag-overlay__score--ai { color: #EF4444; }
+.ag-overlay__score--human { color: #22C55E; }
+.ag-overlay__score--uncertain { color: #F59E0B; }
+
+/* Progress bar for confidence */
+.ag-progress {
+  width: 100%;
+  height: 6px;
+  background: #1E293B;
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.ag-progress__bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease-out;
+}
+
+.ag-progress__bar--ai { background: #EF4444; }
+.ag-progress__bar--human { background: #22C55E; }
+.ag-progress__bar--uncertain { background: #F59E0B; }
+
+/* Signal list */
+.ag-signals {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+
+.ag-signals li {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #1E293B;
+  font-size: 12px;
+}
+
+.ag-signals li:last-child { border-bottom: none; }
+
+.ag-signal__name { color: #CBD5E1; }
+.ag-signal__value { color: #94A3B8; font-weight: 500; }
+
+.ag-signal__weight--high { color: #EF4444; }
+.ag-signal__weight--medium { color: #F59E0B; }
+.ag-signal__weight--low { color: #64748B; }
+
+/* Loading spinner for in-progress analysis */
+.ag-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #475569;
+  border-top-color: #3B82F6;
+  border-radius: 50%;
+  animation: ag-spin 0.8s linear infinite;
+}
+
+@keyframes ag-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Scanning indicator shown during analysis */
+.ag-scanning {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  background: #1E293B;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  font-size: 11px;
+  color: #94A3B8;
+}

@@ -37,9 +37,9 @@ def _get_detector():
         from ai.text_detector.ensemble.text_detector import TextDetector  # type: ignore
 
         _detector = TextDetector(
-            transformer_checkpoint=Path("ai/text-detector/checkpoints/transformer/phase3"),
-            adversarial_checkpoint=Path("ai/text-detector/checkpoints/adversarial/phase3"),
-            meta_checkpoint=Path("ai/text-detector/checkpoints/meta"),
+            transformer_checkpoint=Path("ai/text_detector/checkpoints/transformer/phase3"),
+            adversarial_checkpoint=Path("ai/text_detector/checkpoints/adversarial/phase3"),
+            meta_checkpoint=Path("ai/text_detector/checkpoints/meta"),
         )
         _detector.load_models()
         log.info("text_detector_loaded_in_worker")

@@ -81,9 +81,9 @@ class DetectorRegistry:
         if content_type in ("text", "code"):
             from ..text_detector.ensemble.text_detector import TextDetector  # type: ignore
             det = TextDetector(
-                transformer_checkpoint=self._checkpoint_base / "text-detector/checkpoints/transformer/phase3",
-                adversarial_checkpoint=self._checkpoint_base / "text-detector/checkpoints/adversarial/phase3",
-                meta_checkpoint=self._checkpoint_base / "text-detector/checkpoints/meta",
+                transformer_checkpoint=self._checkpoint_base / "text_detector/checkpoints/transformer/phase3",
+                adversarial_checkpoint=self._checkpoint_base / "text_detector/checkpoints/adversarial/phase3",
+                meta_checkpoint=self._checkpoint_base / "text_detector/checkpoints/meta",
             )
             det.load_models()
             return det
@@ -91,8 +91,8 @@ class DetectorRegistry:
         elif content_type == "audio":
             from ..audio_detector.audio_detector import AudioDetector  # type: ignore
             det = AudioDetector(
-                checkpoint_dir=self._checkpoint_base / "audio-detector/checkpoints/phase3",
-                calibration_path=self._checkpoint_base / "audio-detector/checkpoints/calibration.pkl",
+                checkpoint_dir=self._checkpoint_base / "audio_detector/checkpoints/phase3",
+                calibration_path=self._checkpoint_base / "audio_detector/checkpoints/calibration.pkl",
             )
             det.load_models()
             return det
@@ -100,7 +100,7 @@ class DetectorRegistry:
         elif content_type == "video":
             from ..video_detector.video_detector import VideoDetector  # type: ignore
             det = VideoDetector(
-                checkpoint_dir=self._checkpoint_base / "video-detector/checkpoints/phase3",
+                checkpoint_dir=self._checkpoint_base / "video_detector/checkpoints/phase3",
             )
             det.load_models()
             return det
@@ -108,7 +108,7 @@ class DetectorRegistry:
         elif content_type == "image":
             from ..image_detector.image_detector import ImageDetector  # type: ignore
             det = ImageDetector(
-                checkpoint_dir=self._checkpoint_base / "image-detector/checkpoints/phase3",
+                checkpoint_dir=self._checkpoint_base / "image_detector/checkpoints/phase3",
             )
             det.load_models()
             return det

@@ -31,12 +31,12 @@ authentiguard/
 ├── frontend/          Next.js + React + TypeScript + Tailwind
 ├── backend/           FastAPI — API gateway, auth, upload, orchestration
 ├── ai/
-│   ├── text-detector/
-│   ├── audio-detector/
-│   ├── video-detector/
-│   ├── image-detector/
-│   ├── code-detector/
-│   └── ensemble-engine/
+│   ├── text_detector/
+│   ├── audio_detector/
+│   ├── video_detector/
+│   ├── image_detector/
+│   ├── code_detector/
+│   └── ensemble_engine/
 ├── datasets/
 │   ├── human/         Human-authored content
 │   ├── ai-generated/  AI-generated content

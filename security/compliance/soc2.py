@@ -249,7 +249,7 @@ SOC2_CONTROLS: list[SOC2Control] = [
         ),
         evidence=[
             "security/encryption/encryption.py — hash verification",
-            "ai/authenticity-engine/reports/integrity.py — report signing",
+            "ai/authenticity_engine/reports/integrity.py — report signing",
         ],
     ),
 

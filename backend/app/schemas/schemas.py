@@ -74,6 +74,11 @@ class TextSubmitRequest(BaseModel):
     content_type: Literal["text", "code"] = "text"
 
 
+class UrlSubmitRequest(BaseModel):
+    """Submit a URL for content analysis."""
+    url: Annotated[str, Field(max_length=2048)]
+
+
 class AnalysisJobResponse(BaseModel):
     """Returned immediately after submission — client polls for results."""
     job_id:      uuid.UUID

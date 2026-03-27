@@ -219,13 +219,13 @@ authentiguard/
 │       ├── lib/           API client, types
 │       └── tests/
 ├── ai/                    All ML detection modules
-│   ├── text-detector/     4-layer text ensemble
-│   ├── audio-detector/    Audio deepfake detection
-│   ├── video-detector/    Video deepfake detection
-│   ├── image-detector/    GAN/diffusion image detection
-│   ├── code-detector/     AST + transformer code detection
-│   ├── ensemble-engine/   Multi-modal meta-classifier
-│   └── authenticity-engine/ Unified scoring + reports
+│   ├── text_detector/     4-layer text ensemble
+│   ├── audio_detector/    Audio deepfake detection
+│   ├── video_detector/    Video deepfake detection
+│   ├── image_detector/    GAN/diffusion image detection
+│   ├── code_detector/     AST + transformer code detection
+│   ├── ensemble_engine/   Multi-modal meta-classifier
+│   └── authenticity_engine/ Unified scoring + reports
 ├── security/              Encryption, GDPR, SOC 2 controls
 ├── performance/           Caching, batching, benchmarks
 ├── infra/                 Kubernetes, Helm, Terraform
@@ -258,7 +258,7 @@ pytest backend/tests/unit/ -q
 cd backend && ruff check . && mypy app/
 
 # Commit with conventional commit message
-git commit -m "feat(text-detector): improve stylometry scoring for short texts"
+git commit -m "feat(text_detector): improve stylometry scoring for short texts"
 ```
 
 ### Commit message format
@@ -267,7 +267,7 @@ git commit -m "feat(text-detector): improve stylometry scoring for short texts"
 <type>(<scope>): <short summary>
 
 Types: feat | fix | docs | refactor | test | chore | perf | security
-Scope: text-detector | audio | video | image | code | backend | frontend | infra
+Scope: text_detector | audio | video | image | code | backend | frontend | infra
 
 Examples:
   feat(audio): add pitch jitter analysis to Phase 3 adversarial training
@@ -278,10 +278,10 @@ Examples:
 
 ### Adding a new detector layer
 
-1. Create `ai/text-detector/layers/layer_N_yourname.py` implementing `BaseDetectionLayer`.
-2. Add to `ai/text-detector/ensemble/text_detector.py` with a weight.
+1. Create `ai/text_detector/layers/layer_N_yourname.py` implementing `BaseDetectionLayer`.
+2. Add to `ai/text_detector/ensemble/text_detector.py` with a weight.
 3. Extend `FEATURE_NAMES` in the meta-classifier to include your layer's features.
-4. Add unit tests in `ai/text-detector/tests/`.
+4. Add unit tests in `ai/text_detector/tests/`.
 5. Update `docs/architecture/adr.md` with an ADR if the change is significant.
 
 ---

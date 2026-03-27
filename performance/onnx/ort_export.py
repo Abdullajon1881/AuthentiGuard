@@ -317,11 +317,11 @@ def export_all_detectors(
     results: dict[str, Path] = {}
 
     detectors = [
-        ("text",  checkpoints_base / "text-detector/checkpoints/transformer/phase3"),
-        ("image", checkpoints_base / "image-detector/checkpoints/phase3"),
-        ("audio", checkpoints_base / "audio-detector/checkpoints/phase3"),
-        ("video", checkpoints_base / "video-detector/checkpoints/phase3"),
-        ("code",  checkpoints_base / "code-detector/checkpoints/transformer/phase3"),
+        ("text",  checkpoints_base / "text_detector/checkpoints/transformer/phase3"),
+        ("image", checkpoints_base / "image_detector/checkpoints/phase3"),
+        ("audio", checkpoints_base / "audio_detector/checkpoints/phase3"),
+        ("video", checkpoints_base / "video_detector/checkpoints/phase3"),
+        ("code",  checkpoints_base / "code_detector/checkpoints/transformer/phase3"),
     ]
 
     for name, ckpt_dir in detectors:

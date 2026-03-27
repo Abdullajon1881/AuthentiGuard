@@ -35,8 +35,11 @@ from ...schemas.schemas import (
     RegisterRequest,
     TextSubmitRequest,
     TokenResponse,
+    UrlSubmitRequest,
     UserResponse,
     UsageStatsResponse,
+    WebhookCreateRequest,
+    WebhookResponse,
 )
 from ...services.upload_service import store_upload
 from ...workers.celery_app import CONTENT_TYPE_TO_QUEUE, TIER_TO_PRIORITY
@@ -372,6 +375,295 @@ async def health() -> dict:
         "redis":     "ok" if redis_ok else "degraded",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+# ANALYSIS — URL
+# ═══════════════════════════════════════════════════════════════
+
+@router.post(
+    "/analyze/url",
+    response_model=AnalysisJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["analysis"],
+)
+async def submit_url(
+    body: UrlSubmitRequest,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+) -> AnalysisJobResponse:
+    """Submit a URL for content analysis. Fetches content and routes to the appropriate detector."""
+    import hashlib
+    from ...services.url_analyzer import fetch_and_analyze_url
+
+    try:
+        content_type, content, metadata = await fetch_and_analyze_url(body.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    content_hash = hashlib.sha256(
+        content.encode() if isinstance(content, str) else content
+    ).hexdigest()
+
+    # For text content, store directly; for binary, upload to S3
+    s3_key = None
+    input_text = None
+    file_size = None
+
+    if isinstance(content, str):
+        input_text = content
+    else:
+        from ...services.s3_service import upload_to_s3
+        s3_key = f"urls/{current_user.id}/{content_hash[:16]}"
+        await upload_to_s3(s3_key, content, metadata.get("content_type_header", "application/octet-stream"))
+        file_size = len(content)
+
+    job = DetectionJob(
+        user_id=current_user.id,
+        content_type=content_type,
+        input_text=input_text,
+        s3_key=s3_key,
+        file_name=body.url,
+        file_size=file_size,
+        content_hash=content_hash,
+        status=JobStatus.PENDING,
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    queue    = CONTENT_TYPE_TO_QUEUE.get(content_type.value, "text")
+    priority = TIER_TO_PRIORITY.get(current_user.tier.value, 1)
+
+    if queue == "text":
+        task = run_text_detection.apply_async(
+            args=[str(job.id)], queue=queue, priority=priority
+        )
+    else:
+        from ...workers.celery_app import celery_app
+        task = celery_app.send_task(
+            f"workers.{queue}_worker.run_{queue}_detection",
+            args=[str(job.id)],
+            queue=queue,
+            priority=priority,
+        )
+
+    job.celery_task_id = task.id
+    await db.commit()
+
+    return AnalysisJobResponse(
+        job_id=job.id,
+        status=job.status.value,
+        content_type=content_type.value,
+        created_at=job.created_at,
+        poll_url=f"/api/v1/jobs/{job.id}",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# WEBHOOKS — CRUD
+# ═══════════════════════════════════════════════════════════════
+
+@router.post(
+    "/webhooks",
+    response_model=WebhookResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["webhooks"],
+)
+async def create_webhook(
+    body: WebhookCreateRequest,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+) -> WebhookResponse:
+    """Register a webhook endpoint to receive job notifications."""
+    from ...models.webhook import Webhook
+
+    # Limit webhooks per user
+    existing = await db.execute(
+        select(Webhook).where(Webhook.user_id == current_user.id, Webhook.is_active == True)
+    )
+    if len(existing.scalars().all()) >= 10:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 10 active webhooks per user",
+        )
+
+    webhook = Webhook(
+        user_id=current_user.id,
+        url=body.url,
+        events=body.events,
+        secret=body.secret,
+    )
+    db.add(webhook)
+    await db.commit()
+    await db.refresh(webhook)
+    return webhook
+
+
+@router.get("/webhooks", response_model=list[WebhookResponse], tags=["webhooks"])
+async def list_webhooks(
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+) -> list:
+    """List all webhooks for the current user."""
+    from ...models.webhook import Webhook
+    result = await db.execute(
+        select(Webhook).where(Webhook.user_id == current_user.id).order_by(Webhook.created_at.desc())
+    )
+    return result.scalars().all()
+
+
+@router.delete(
+    "/webhooks/{webhook_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["webhooks"],
+)
+async def delete_webhook(
+    webhook_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a webhook."""
+    from ...models.webhook import Webhook
+    result = await db.execute(
+        select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == current_user.id)
+    )
+    webhook = result.scalar_one_or_none()
+    if not webhook:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found")
+    await db.delete(webhook)
+    await db.commit()
+
+
+@router.patch("/webhooks/{webhook_id}", response_model=WebhookResponse, tags=["webhooks"])
+async def update_webhook(
+    webhook_id: uuid.UUID,
+    body: WebhookCreateRequest,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+) -> WebhookResponse:
+    """Update a webhook's URL, events, or secret."""
+    from ...models.webhook import Webhook
+    result = await db.execute(
+        select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == current_user.id)
+    )
+    webhook = result.scalar_one_or_none()
+    if not webhook:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found")
+
+    webhook.url = body.url
+    webhook.events = body.events
+    if body.secret is not None:
+        webhook.secret = body.secret
+    await db.commit()
+    await db.refresh(webhook)
+    return webhook
+
+
+# ═══════════════════════════════════════════════════════════════
+# PASSPORT — PUBLIC VERIFICATION
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/passport/{content_hash}", tags=["passport"])
+async def get_passport(content_hash: str) -> dict:
+    """
+    Public endpoint — retrieve an authenticity passport by content hash.
+    No authentication required.
+    """
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../../../../"))
+
+    try:
+        from authenticity_passport.signer.passport import PassportRegistry  # type: ignore
+        registry = PassportRegistry()
+        passport = registry.get(content_hash)
+        if not passport:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Passport not found")
+        return passport.__dict__ if hasattr(passport, "__dict__") else passport
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Passport module not available",
+        )
+
+
+@router.post("/passport/verify", tags=["passport"])
+async def verify_passport(body: dict) -> dict:
+    """
+    Public endpoint — verify an authenticity passport.
+    Accepts passport JSON and returns verification result.
+    """
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../../../../"))
+
+    try:
+        from authenticity_passport.signer.passport import PassportVerifier  # type: ignore
+        verifier = PassportVerifier()
+        result = verifier.verify(body)
+        return {"verified": result.get("valid", False), "details": result}
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Passport module not available",
+        )
+
+
+# ═══════════════════════════════════════════════════════════════
+# REPORTS — EXPORT
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/jobs/{job_id}/report", tags=["reports"])
+async def get_report(
+    job_id: uuid.UUID,
+    format: str = "json",
+    current_user: CurrentUser = Depends(),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Generate or retrieve a detection report.
+    Supports format=json or format=pdf.
+    """
+    job = await _get_job_or_404(job_id, current_user.id, db)
+
+    if job.status != JobStatus.COMPLETED or not job.result:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Job must be completed before generating a report",
+        )
+
+    r = job.result
+
+    if format == "json":
+        return {
+            "report_type": "json",
+            "job_id": str(job.id),
+            "content_type": job.content_type.value,
+            "authenticity_score": r.authenticity_score,
+            "confidence": r.confidence,
+            "label": r.label,
+            "layer_scores": r.layer_scores,
+            "evidence_summary": r.evidence_summary,
+            "sentence_scores": r.sentence_scores,
+            "model_attribution": r.model_attribution,
+            "processing_ms": r.processing_ms,
+            "created_at": job.created_at.isoformat() if job.created_at else None,
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        }
+    elif format == "pdf":
+        from ...services.report_service import generate_pdf_report
+        try:
+            pdf_url = await generate_pdf_report(job, r)
+            return {"report_type": "pdf", "report_url": pdf_url}
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate PDF: {str(exc)}",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Supported formats: json, pdf",
+        )
 
 
 # ═══════════════════════════════════════════════════════════════

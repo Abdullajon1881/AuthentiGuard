@@ -89,7 +89,7 @@ class AuthentiGuardEngine:
     def __init__(self, checkpoint_base: Path | None = None) -> None:
         self._base = checkpoint_base or Path("ai")
         self._meta = EnsembleMetaClassifier(
-            checkpoint_path=self._base / "ensemble-engine/checkpoints/meta"
+            checkpoint_path=self._base / "ensemble_engine/checkpoints/meta"
         )
         self._loaded = False
 
