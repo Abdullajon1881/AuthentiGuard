@@ -1,0 +1,3055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthentiGuard — AI Content Detection</title>
+<meta name="description" content="AuthentiGuard analyses text, images, audio, video, and code to detect AI-generated content. Cryptographically signed forensic reports.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════
+   DESIGN TOKENS
+   ═══════════════════════════════════════════════════════════ */
+:root {
+  --bg:       #0c0c0a;
+  --bg2:      #111110;
+  --bg3:      #181816;
+  --bg4:      #1e1e1c;
+  --paper:    #f5f3ee;
+  --ink:      #0a0a08;
+  --signal:   #c8402a;
+  --signal-d: rgba(200,64,42,0.14);
+  --signal-b: rgba(200,64,42,0.22);
+  --green:    #2a7a4a;
+  --green-d:  rgba(42,122,74,0.14);
+  --amber:    #a07010;
+  --amber-d:  rgba(160,112,16,0.14);
+  --text:     #e8e4dc;
+  --text2:    rgba(232,228,220,0.5);
+  --text3:    rgba(232,228,220,0.25);
+  --text4:    rgba(232,228,220,0.1);
+  --border:   rgba(232,228,220,0.07);
+  --border2:  rgba(232,228,220,0.13);
+  --border3:  rgba(232,228,220,0.22);
+  --font-display: 'DM Serif Display', Georgia, serif;
+  --font-ui: 'Syne', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+
+/* noise overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  opacity: 0.038;
+  pointer-events: none;
+  z-index: 9999;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 128px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   NAV
+   ═══════════════════════════════════════════════════════════ */
+.nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  height: 64px;
+  padding: 0 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  background: rgba(12,12,10,0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-decoration: none;
+}
+
+.nav-parent {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--text3);
+  text-transform: uppercase;
+  padding-right: 14px;
+  border-right: 1px solid var(--border2);
+}
+
+.nav-logo {
+  font-family: var(--font-ui);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  text-transform: uppercase;
+}
+.nav-logo span { color: var(--signal); }
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  list-style: none;
+}
+
+.nav-links a {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text2);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--text); }
+
+.nav-pill {
+  background: var(--signal);
+  color: var(--paper) !important;
+  padding: 9px 20px;
+  font-weight: 700 !important;
+  transition: opacity 0.2s !important;
+}
+.nav-pill:hover { opacity: 0.85; }
+
+.nav-hamburger {
+  display: none;
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.nav-mobile {
+  display: none;
+  position: fixed;
+  top: 64px; left: 0; right: 0;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border2);
+  padding: 20px 24px;
+  flex-direction: column;
+  gap: 16px;
+  z-index: 99;
+}
+.nav-mobile.open { display: flex; }
+
+.nav-mobile a {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2);
+  text-decoration: none;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  transition: color 0.2s;
+}
+.nav-mobile a:hover { color: var(--text); }
+
+/* nav auth buttons */
+.nav-auth {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+.nav-auth-login {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 4px;
+  transition: color 0.2s;
+}
+.nav-auth-login:hover { color: var(--text); }
+.nav-auth-register {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--paper);
+  background: var(--signal);
+  border: none;
+  padding: 9px 20px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.nav-auth-register:hover { opacity: 0.85; }
+.nav-user {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text2);
+}
+.nav-user.active { display: flex; }
+.nav-user-email { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-user-logout {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text3);
+  background: none;
+  border: 1px solid var(--border2);
+  padding: 5px 12px;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: color 0.15s, border-color 0.15s;
+}
+.nav-user-logout:hover { color: var(--signal); border-color: var(--signal); }
+
+/* auth modal */
+.auth-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.auth-overlay.open { display: flex; }
+
+.auth-modal {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 420px;
+  padding: 0;
+  position: relative;
+  animation: authIn 0.2s ease-out;
+}
+@keyframes authIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+.auth-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: none;
+  border: none;
+  color: var(--text3);
+  font-size: 20px;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s;
+}
+.auth-close:hover { color: var(--text); }
+
+.auth-header {
+  padding: 32px 32px 0;
+  text-align: center;
+}
+.auth-title {
+  font-family: var(--font-head);
+  font-size: 24px;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.auth-subtitle {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text3);
+}
+
+.auth-tabs {
+  display: flex;
+  margin: 20px 32px 0;
+  border-bottom: 1px solid var(--border);
+}
+.auth-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text3);
+  padding: 12px 0;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s, border-color 0.2s;
+}
+.auth-tab.active { color: var(--signal); border-bottom-color: var(--signal); }
+
+.auth-body { padding: 24px 32px 32px; }
+
+.auth-oauth {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.auth-oauth-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 16px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: var(--bg3);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.auth-oauth-btn:hover { border-color: var(--text3); background: var(--bg4); }
+.auth-oauth-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 20px;
+}
+.auth-or::before,
+.auth-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.auth-field {
+  margin-bottom: 14px;
+}
+.auth-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 6px;
+}
+.auth-input {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+.auth-input:focus { border-color: var(--signal); }
+.auth-input::placeholder { color: var(--text3); }
+
+.auth-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 18px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text3);
+  line-height: 1.4;
+}
+.auth-consent input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: var(--signal);
+  flex-shrink: 0;
+}
+
+.auth-submit {
+  width: 100%;
+  padding: 13px;
+  background: var(--signal);
+  border: none;
+  border-radius: 6px;
+  color: var(--paper);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  position: relative;
+}
+.auth-submit:hover { opacity: 0.85; }
+.auth-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.auth-error {
+  display: none;
+  background: rgba(196,75,55,0.1);
+  border: 1px solid rgba(196,75,55,0.3);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--signal);
+  margin-bottom: 14px;
+}
+.auth-error.visible { display: block; }
+
+.auth-switch {
+  text-align: center;
+  margin-top: 16px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text3);
+}
+.auth-switch button {
+  background: none;
+  border: none;
+  color: var(--signal);
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--font-ui);
+}
+.auth-switch button:hover { text-decoration: underline; }
+
+@media (max-width: 900px) {
+  .nav-auth { gap: 8px; }
+  .nav-auth-login { display: none; }
+  .auth-modal { max-width: 100%; border-radius: 8px; }
+  .auth-header { padding: 24px 24px 0; }
+  .auth-tabs { margin: 16px 24px 0; }
+  .auth-body { padding: 20px 24px 24px; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HERO
+   ═══════════════════════════════════════════════════════════ */
+.hero {
+  min-height: 100vh;
+  padding: 130px 60px 80px;
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 72px;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(232,228,220,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(232,228,220,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* scanning line */
+.hero-scan {
+  position: absolute;
+  left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(200,64,42,0.4), transparent);
+  animation: scan 5s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes scan {
+  0% { top: 15%; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: 85%; opacity: 0; }
+}
+
+/* decorative rings */
+.hero-rings {
+  position: absolute;
+  right: -180px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 600px;
+  height: 600px;
+  pointer-events: none;
+}
+.hero-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+.hero-ring:nth-child(1) { inset: 0; }
+.hero-ring:nth-child(2) { inset: 60px; }
+.hero-ring:nth-child(3) {
+  inset: 120px;
+  animation: ring-cw 18s linear infinite;
+  border-top-color: rgba(200,64,42,0.28);
+}
+.hero-ring:nth-child(4) {
+  inset: 180px;
+  animation: ring-ccw 26s linear infinite;
+  border-top-color: rgba(200,64,42,0.18);
+}
+@keyframes ring-cw  { to { transform: rotate(360deg); } }
+@keyframes ring-ccw { to { transform: rotate(-360deg); } }
+
+.hero-left { position: relative; z-index: 2; }
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border2);
+  padding: 8px 16px;
+  margin-bottom: 36px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+
+.badge-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--signal);
+  animation: pulse-dot 2s ease infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+h1 {
+  font-family: var(--font-display);
+  font-size: clamp(46px, 5.5vw, 80px);
+  line-height: 1.05;
+  letter-spacing: -0.022em;
+  color: var(--text);
+  margin-bottom: 32px;
+}
+h1 em { font-style: italic; color: var(--signal); }
+
+.hero-body {
+  font-size: 17px;
+  line-height: 1.75;
+  color: var(--text2);
+  max-width: 500px;
+  margin-bottom: 48px;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--signal);
+  color: var(--paper);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 16px 32px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+}
+.btn-primary:hover { opacity: 0.85; transform: translateY(-1px); }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--text2);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 16px 0;
+  border: none;
+  border-bottom: 1px solid var(--border2);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.btn-secondary:hover { color: var(--text); border-color: var(--text2); }
+
+.hero-right { position: relative; z-index: 2; }
+
+/* ─── Score Card (hero) ─── */
+.score-card {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  overflow: hidden;
+  animation: fadeUp 1s ease 0.3s both;
+}
+.score-toolbar {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.score-dots { display: flex; gap: 6px; }
+.score-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border2); }
+.score-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--signal);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.score-status::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--signal);
+  animation: pulse-dot 2s ease infinite;
+}
+.score-body { padding: 28px 24px; }
+.score-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+.score-file-icon {
+  width: 32px; height: 32px;
+  border: 1px solid var(--border2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text3);
+  letter-spacing: 0.08em;
+  flex-shrink: 0;
+}
+.score-file-name { font-family: var(--font-mono); font-size: 12px; color: var(--text); margin-bottom: 3px; }
+.score-file-meta { font-family: var(--font-mono); font-size: 10px; color: var(--text3); }
+.score-file-badge {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border: 1px solid var(--signal-b);
+  color: var(--signal);
+}
+.score-meter { margin-bottom: 24px; }
+.score-meter-label { display: flex; justify-content: space-between; margin-bottom: 10px; }
+.score-meter-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.score-meter-val {
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 1;
+  color: var(--signal);
+}
+.score-track {
+  height: 4px;
+  background: var(--border2);
+  position: relative;
+  overflow: hidden;
+}
+.score-fill {
+  position: absolute;
+  top: 0; left: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--green) 0%, var(--amber) 50%, var(--signal) 100%);
+  width: 87%;
+  animation: fillBar 1.8s ease 0.6s both;
+  transform-origin: left;
+}
+@keyframes fillBar {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.score-track-labels { display: flex; justify-content: space-between; margin-top: 6px; }
+.score-track-label { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; color: var(--text3); }
+.score-verdict {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  background: var(--signal-d);
+  border: 1px solid var(--signal-b);
+  margin-bottom: 20px;
+}
+.verdict-label {
+  font-family: var(--font-ui);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--signal);
+}
+.verdict-model { font-family: var(--font-mono); font-size: 12px; color: var(--text2); }
+.verdict-model strong { color: var(--text); font-weight: 400; }
+.score-rows { display: flex; flex-direction: column; gap: 10px; }
+.score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.score-row-key { color: var(--text3); }
+.score-row-val { color: var(--text); }
+.score-row-val.ai { color: var(--signal); }
+.score-row-val.human { color: var(--green); }
+.score-row-val.uncertain { color: var(--amber); }
+
+/* ═══════════════════════════════════════════════════════════
+   TICKER STRIP
+   ═══════════════════════════════════════════════════════════ */
+.ticker-strip {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 13px 0;
+  overflow: hidden;
+  background: var(--bg2);
+}
+.ticker-inner {
+  display: flex;
+  gap: 80px;
+  animation: ticker 22s linear infinite;
+  white-space: nowrap;
+}
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.ticker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+.ticker-item::before {
+  content: '';
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--signal);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SECTIONS
+   ═══════════════════════════════════════════════════════════ */
+.section {
+  padding: 120px 60px;
+  border-top: 1px solid var(--border);
+}
+.section-header {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: end;
+  margin-bottom: 72px;
+}
+.section-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 24px;
+}
+.section-eyebrow::before { content: attr(data-n); color: var(--signal); }
+
+h2 {
+  font-family: var(--font-display);
+  font-size: clamp(34px, 4vw, 52px);
+  line-height: 1.1;
+  letter-spacing: -0.022em;
+  color: var(--text);
+}
+h2 em { font-style: italic; color: var(--signal); }
+
+.section-sub {
+  font-size: 17px;
+  line-height: 1.75;
+  color: var(--text2);
+  align-self: end;
+}
+
+/* ─── Content Types ─── */
+.content-types {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  border: 1px solid var(--border2);
+}
+.content-type {
+  padding: 38px 26px;
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.25s;
+  position: relative;
+  overflow: hidden;
+  outline: none;
+}
+.content-type:last-child { border-right: none; }
+.content-type::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--signal);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s;
+}
+.content-type:hover, .content-type.active { background: var(--bg3); }
+.content-type:hover::before, .content-type.active::before { transform: scaleX(1); }
+.ct-icon {
+  width: 38px; height: 38px;
+  border: 1px solid var(--border2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  font-size: 16px;
+  transition: border-color 0.25s;
+}
+.content-type:hover .ct-icon { border-color: var(--signal-b); }
+.ct-type { font-family: var(--font-ui); font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 12px; }
+.ct-detects { font-size: 13px; line-height: 1.6; color: var(--text2); margin-bottom: 20px; }
+.ct-tags { display: flex; flex-direction: column; gap: 6px; }
+.ct-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text3);
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+
+/* ─── Output Section ─── */
+.section-output { background: var(--bg2); }
+.output-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--border2);
+}
+.output-item {
+  padding: 44px 36px;
+  border-right: 1px solid var(--border);
+  transition: background 0.25s;
+}
+.output-item:last-child { border-right: none; }
+.output-item:hover { background: var(--bg3); }
+.output-num {
+  font-family: var(--font-display);
+  font-size: 48px;
+  line-height: 1;
+  color: var(--signal);
+  margin-bottom: 4px;
+}
+.output-num sub {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  vertical-align: middle;
+  color: var(--text3);
+}
+.output-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 12px; margin-top: 16px; }
+.output-desc { font-size: 14px; line-height: 1.65; color: var(--text2); }
+
+/* ─── Audience ─── */
+.audience-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: var(--border);
+}
+.audience-item {
+  background: var(--bg);
+  padding: 48px 44px;
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 28px;
+  align-items: start;
+  transition: background 0.25s;
+}
+.audience-item:hover { background: var(--bg2); }
+.audience-icon {
+  width: 56px; height: 56px;
+  border: 1px solid var(--border2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  transition: border-color 0.25s;
+}
+.audience-item:hover .audience-icon { border-color: var(--signal-b); }
+.audience-role { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 12px; }
+.audience-desc { font-size: 14px; line-height: 1.65; color: var(--text2); margin-bottom: 16px; }
+.audience-usecase {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--signal);
+  text-transform: uppercase;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DEMO SECTION
+   ═══════════════════════════════════════════════════════════ */
+.demo-section { background: var(--bg2); }
+.demo-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 60px;
+  align-items: start;
+  margin-top: 72px;
+}
+
+/* tabs */
+.demo-tabs {
+  display: flex;
+  border: 1px solid var(--border2);
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+.demo-tab {
+  flex: 1;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.demo-tab:last-child { border-right: none; }
+.demo-tab[aria-selected="true"] { background: var(--signal); color: var(--paper); }
+.demo-tab:hover:not([aria-selected="true"]) { background: var(--bg3); color: var(--text2); }
+
+/* tab panels */
+.demo-panel { display: none; }
+.demo-panel.active { display: block; }
+
+.demo-input-area {
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  overflow: hidden;
+}
+.demo-bar {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.demo-bar-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border2); }
+.demo-bar-url {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text3);
+  flex: 1;
+  text-align: center;
+}
+.demo-textarea {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.8;
+  padding: 20px;
+  resize: none;
+  outline: none;
+}
+.demo-textarea::placeholder { color: var(--text3); }
+.demo-textarea.code-input { font-size: 12px; }
+
+.demo-meta {
+  padding: 8px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+}
+.char-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text3);
+}
+.clear-btn {
+  background: none;
+  border: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text3);
+  cursor: pointer;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: color 0.2s;
+}
+.clear-btn:hover { color: var(--text2); }
+
+.sample-row {
+  padding: 10px 20px;
+  display: flex;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+}
+.sample-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text3);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.sample-btn:hover { background: var(--bg4); color: var(--text2); border-color: var(--border2); }
+
+.demo-run {
+  width: 100%;
+  background: var(--signal);
+  border: none;
+  color: var(--paper);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 15px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  position: relative;
+}
+.demo-run:hover { opacity: 0.85; }
+.demo-run:disabled { opacity: 0.6; cursor: not-allowed; }
+.demo-run .btn-text { transition: opacity 0.2s; }
+.demo-run.loading .btn-text { opacity: 0; }
+.demo-run .spinner {
+  display: none;
+  position: absolute;
+  width: 16px; height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+.demo-run.loading .spinner { display: block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.demo-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text3);
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* upload zone */
+.upload-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.upload-divider::before,
+.upload-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.upload-zone {
+  margin: 0 20px 16px;
+  border: 2px dashed var(--border2);
+  border-radius: 8px;
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  position: relative;
+}
+.upload-zone:hover,
+.upload-zone.drag-over {
+  border-color: var(--signal);
+  background: rgba(196,75,55,0.05);
+}
+.upload-zone-icon {
+  font-size: 28px;
+  margin-bottom: 8px;
+  opacity: 0.5;
+}
+.upload-zone-text {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text2);
+  margin-bottom: 4px;
+}
+.upload-zone-text strong {
+  color: var(--signal);
+  font-weight: 600;
+}
+.upload-zone-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text3);
+  letter-spacing: 0.04em;
+}
+.upload-zone input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.upload-preview {
+  display: none;
+  margin: 0 20px 16px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 12px 16px;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg3);
+}
+.upload-preview.active { display: flex; }
+.upload-preview-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.upload-preview-info {
+  flex: 1;
+  min-width: 0;
+}
+.upload-preview-name {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.upload-preview-size {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text3);
+  margin-top: 2px;
+}
+.upload-preview-remove {
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--text3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.upload-preview-remove:hover {
+  color: var(--signal);
+  border-color: var(--signal);
+}
+.upload-preview-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+.upload-player {
+  margin: 0 20px 12px;
+}
+.upload-player audio,
+.upload-player video {
+  width: 100%;
+  border-radius: 6px;
+  outline: none;
+}
+.upload-player video {
+  max-height: 200px;
+  background: #000;
+}
+
+/* gated panel */
+.gated-panel {
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  padding: 48px 32px;
+  text-align: center;
+}
+.gated-icon {
+  font-size: 32px;
+  margin-bottom: 20px;
+  opacity: 0.4;
+}
+.gated-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.gated-desc {
+  font-size: 14px;
+  color: var(--text2);
+  max-width: 400px;
+  margin: 0 auto 24px;
+  line-height: 1.65;
+}
+.gated-code {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  padding: 16px 20px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text3);
+  text-align: left;
+  margin-bottom: 24px;
+  overflow-x: auto;
+  white-space: pre;
+}
+.gated-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--signal);
+  color: var(--paper);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 12px 24px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.gated-btn:hover { opacity: 0.85; }
+
+/* ─── Result Panel ─── */
+.result-panel {
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  overflow: hidden;
+  min-height: 400px;
+}
+
+/* state: placeholder */
+.rp-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+  text-align: center;
+}
+.rp-placeholder-icon {
+  font-size: 48px;
+  color: var(--text3);
+  margin-bottom: 20px;
+}
+.rp-placeholder-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  color: var(--text2);
+  margin-bottom: 8px;
+}
+.rp-placeholder-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text3);
+  letter-spacing: 0.08em;
+}
+
+/* state: loading */
+.rp-loading { padding: 32px 24px; display: none; }
+.rp-loading-bar {
+  height: 3px;
+  background: var(--border2);
+  margin-bottom: 32px;
+  overflow: hidden;
+  position: relative;
+}
+.rp-loading-fill {
+  position: absolute;
+  top: 0; left: 0;
+  height: 100%;
+  width: 30%;
+  background: var(--signal);
+  animation: loading-slide 1.2s ease-in-out infinite;
+}
+@keyframes loading-slide {
+  0% { left: -30%; }
+  100% { left: 100%; }
+}
+.rp-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text3);
+  transition: color 0.3s;
+}
+.rp-step.active { color: var(--text); }
+.rp-step.done { color: var(--green); }
+.rp-step-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--border2);
+  flex-shrink: 0;
+  transition: background 0.3s, border-color 0.3s;
+}
+.rp-step.active .rp-step-dot { background: var(--signal); border-color: var(--signal); }
+.rp-step.done .rp-step-dot { background: var(--green); border-color: var(--green); }
+
+/* state: error */
+.rp-error {
+  display: none;
+  padding: 48px 24px;
+  text-align: center;
+}
+.rp-error-title {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--signal);
+  margin-bottom: 12px;
+}
+.rp-error-msg { font-size: 14px; color: var(--text2); line-height: 1.6; }
+
+/* state: result */
+.rp-result { display: none; }
+.rp-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.rp-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.rp-id {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text3);
+}
+.rp-verdict-block {
+  padding: 28px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.rp-score-big {
+  font-family: var(--font-display);
+  font-size: 56px;
+  line-height: 1;
+}
+.rp-score-big.verdict-ai { color: var(--signal); }
+.rp-score-big.verdict-human { color: var(--green); }
+.rp-score-big.verdict-uncertain { color: var(--amber); }
+.rp-right { flex: 1; }
+.rp-verdict-label {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.rp-verdict-label.verdict-ai { color: var(--signal); }
+.rp-verdict-label.verdict-human { color: var(--green); }
+.rp-verdict-label.verdict-uncertain { color: var(--amber); }
+.rp-model-guess { font-family: var(--font-mono); font-size: 12px; color: var(--text2); }
+.rp-model-guess em { font-style: normal; color: var(--text); }
+
+.rp-layers {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.layer-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 48px;
+  align-items: center;
+  gap: 14px;
+}
+.layer-name { font-family: var(--font-mono); font-size: 11px; color: var(--text3); }
+.layer-bar-track {
+  height: 3px;
+  background: var(--border2);
+  position: relative;
+  overflow: hidden;
+}
+.layer-bar-fill {
+  position: absolute;
+  top: 0; left: 0; height: 100%;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.8s ease;
+}
+.layer-bar-fill.high { background: var(--signal); }
+.layer-bar-fill.mid { background: var(--amber); }
+.layer-bar-fill.low { background: var(--green); }
+.layer-pct { font-family: var(--font-mono); font-size: 11px; color: var(--text2); text-align: right; }
+
+.rp-flags {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.rp-flags-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 14px;
+}
+.rp-flag {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.6;
+  padding: 6px 0;
+}
+.rp-flag-arrow { color: var(--signal); margin-right: 8px; }
+
+.rp-reasoning {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.rp-reasoning-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 10px;
+}
+.rp-reasoning-text { font-size: 14px; color: var(--text2); line-height: 1.7; }
+
+.rp-footer {
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.rp-signed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+.rp-actions { display: flex; gap: 10px; }
+.rp-action-btn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text3);
+  text-decoration: none;
+  border: 1px solid var(--border2);
+  padding: 6px 14px;
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.rp-action-btn:hover { color: var(--text2); border-color: var(--border3); }
+.rp-action-btn.copied { color: var(--green); border-color: var(--green); }
+
+/* ═══════════════════════════════════════════════════════════
+   CTA
+   ═══════════════════════════════════════════════════════════ */
+.section-cta {
+  padding: 160px 60px;
+  text-align: center;
+  border-top: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+.cta-bg {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 60% 60% at 50% 50%, rgba(200,64,42,0.055) 0%, transparent 70%);
+  pointer-events: none;
+}
+.section-cta h2 {
+  font-size: clamp(36px, 5vw, 64px);
+  max-width: 700px;
+  margin: 0 auto 28px;
+}
+.cta-sub {
+  font-size: 18px;
+  color: var(--text2);
+  max-width: 500px;
+  margin: 0 auto 40px;
+  line-height: 1.7;
+}
+.cta-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 36px;
+}
+.cta-compliance {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text3);
+  text-transform: uppercase;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FOOTER
+   ═══════════════════════════════════════════════════════════ */
+.footer {
+  padding: 60px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.footer-left { display: flex; flex-direction: column; gap: 8px; }
+.footer-logo {
+  font-family: var(--font-ui);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.footer-logo span { color: var(--signal); }
+.footer-parent-link {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text3);
+  text-decoration: none;
+  letter-spacing: 0.1em;
+  transition: color 0.2s;
+}
+.footer-parent-link:hover { color: var(--text2); }
+.footer-links { display: flex; gap: 32px; list-style: none; }
+.footer-links a {
+  font-size: 13px;
+  color: var(--text3);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.footer-links a:hover { color: var(--text2); }
+.footer-copy { font-family: var(--font-mono); font-size: 11px; color: var(--text3); }
+
+/* ═══════════════════════════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════════════════════════ */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.75s ease, transform 0.75s ease;
+}
+.reveal.in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); }
+
+/* ═══════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 1100px) {
+  .content-types { grid-template-columns: repeat(3, 1fr); }
+  .content-type:nth-child(4) { border-bottom: 1px solid var(--border); }
+  .content-type:nth-child(3) { border-right: none; }
+  .output-grid { grid-template-columns: repeat(2, 1fr); }
+  .output-item:nth-child(2) { border-right: none; }
+  .output-item:nth-child(1), .output-item:nth-child(2) { border-bottom: 1px solid var(--border); }
+}
+
+@media (max-width: 900px) {
+  .nav { padding: 0 16px; }
+  .nav-links { display: none; }
+  .nav-hamburger { display: block; }
+  .nav-parent { display: none; }
+  .nav-brand { gap: 0; }
+  .nav-logo { font-size: 15px; }
+  .nav-auth-register { padding: 7px 14px; font-size: 11px; }
+
+  .hero {
+    grid-template-columns: 1fr;
+    padding: 110px 24px 60px;
+    min-height: auto;
+  }
+  .hero-right { display: none; }
+  .hero-rings { display: none; }
+
+  .section { padding: 72px 24px; }
+  .section-header { grid-template-columns: 1fr; gap: 24px; }
+
+  .content-types { grid-template-columns: repeat(2, 1fr); }
+  .content-type:nth-child(2n) { border-right: none; }
+  .content-type { border-bottom: 1px solid var(--border); }
+  .content-type:last-child { border-bottom: none; }
+
+  .demo-layout { grid-template-columns: 1fr; }
+  .audience-grid { grid-template-columns: 1fr; }
+  .audience-item { grid-template-columns: 60px 1fr; gap: 16px; padding: 32px 24px; }
+
+  .footer { flex-direction: column; gap: 24px; text-align: center; }
+  .footer-links { flex-wrap: wrap; justify-content: center; gap: 16px; }
+
+  .section-cta { padding: 80px 24px; }
+}
+
+@media (max-width: 560px) {
+  .section { padding: 60px 18px; }
+  h1 { font-size: 40px; }
+  .content-types { grid-template-columns: 1fr; }
+  .content-type { border-right: none; border-bottom: 1px solid var(--border); }
+  .content-type:last-child { border-bottom: none; }
+  .output-grid { grid-template-columns: 1fr; }
+  .output-item { border-right: none; border-bottom: 1px solid var(--border); }
+  .output-item:last-child { border-bottom: none; }
+  .cta-actions { flex-direction: column; }
+  .cta-actions .btn-primary, .cta-actions .btn-secondary { width: 100%; justify-content: center; }
+  .hero { padding: 100px 18px 40px; }
+  .layer-row { grid-template-columns: 90px 1fr 40px; gap: 8px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ NAV ═══ -->
+<nav class="nav">
+  <a href="#" class="nav-brand">
+    <span class="nav-parent">Authentic Inc.</span>
+    <span class="nav-logo">Authenti<span>Guard</span></span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#detection">Detection</a></li>
+    <li><a href="#output">Output</a></li>
+    <li><a href="#audiences">Who It's For</a></li>
+    <li><a href="#demo">Demo</a></li>
+  </ul>
+  <div class="nav-auth" id="nav-auth-buttons">
+    <button class="nav-auth-login" onclick="openAuth('login')">Log In</button>
+    <button class="nav-auth-register" onclick="openAuth('register')">Register</button>
+  </div>
+  <div class="nav-user" id="nav-user-info">
+    <span class="nav-user-email" id="nav-user-email"></span>
+    <button class="nav-user-logout" onclick="logoutUser()">Log Out</button>
+  </div>
+  <button class="nav-hamburger" onclick="document.querySelector('.nav-mobile').classList.toggle('open')" aria-label="Toggle navigation">☰</button>
+</nav>
+<div class="nav-mobile">
+  <a href="#detection" onclick="this.parentElement.classList.remove('open')">Detection</a>
+  <a href="#output" onclick="this.parentElement.classList.remove('open')">Output</a>
+  <a href="#audiences" onclick="this.parentElement.classList.remove('open')">Who It's For</a>
+  <a href="#demo" onclick="this.parentElement.classList.remove('open')">Demo</a>
+  <a href="#" onclick="this.parentElement.classList.remove('open'); openAuth('register')" class="nav-mobile-auth">Register / Log In</a>
+</div>
+
+<!-- ═══ AUTH MODAL ═══ -->
+<div class="auth-overlay" id="auth-overlay" onclick="if(event.target===this)closeAuth()">
+  <div class="auth-modal" role="dialog" aria-modal="true" aria-label="Authentication">
+    <button class="auth-close" onclick="closeAuth()" aria-label="Close">&times;</button>
+    <div class="auth-header">
+      <div class="auth-title" id="auth-title">Create your account</div>
+      <div class="auth-subtitle" id="auth-subtitle">Analyse text, images, audio, video, and code</div>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="auth-tab-register" onclick="switchAuthTab('register')">Register</button>
+      <button class="auth-tab" id="auth-tab-login" onclick="switchAuthTab('login')">Log In</button>
+    </div>
+    <div class="auth-body">
+      <div class="auth-oauth">
+        <button class="auth-oauth-btn" onclick="oauthLogin('github')">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          Continue with GitHub
+        </button>
+        <button class="auth-oauth-btn" onclick="oauthLogin('google')">
+          <svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+          Continue with Google
+        </button>
+      </div>
+      <div class="auth-or">or</div>
+      <div class="auth-error" id="auth-error"></div>
+      <form id="auth-form" onsubmit="handleAuth(event)">
+        <div class="auth-field" id="auth-field-name" style="display:none">
+          <label class="auth-label" for="auth-name">Full Name</label>
+          <input class="auth-input" type="text" id="auth-name" placeholder="Jane Doe" autocomplete="name">
+        </div>
+        <div class="auth-field">
+          <label class="auth-label" for="auth-email">Email</label>
+          <input class="auth-input" type="email" id="auth-email" placeholder="you@company.com" required autocomplete="email">
+        </div>
+        <div class="auth-field">
+          <label class="auth-label" for="auth-password">Password</label>
+          <input class="auth-input" type="password" id="auth-password" placeholder="Min 10 characters" required autocomplete="new-password" minlength="10">
+        </div>
+        <div class="auth-consent" id="auth-consent">
+          <input type="checkbox" id="auth-gdpr" required>
+          <label for="auth-gdpr">I agree to the <a href="#" style="color:var(--signal)">Terms of Service</a> and <a href="#" style="color:var(--signal)">Privacy Policy</a></label>
+        </div>
+        <button class="auth-submit" type="submit" id="auth-submit">Create Account</button>
+      </form>
+      <div class="auth-switch" id="auth-switch">
+        Already have an account? <button onclick="switchAuthTab('login')">Log in</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ HERO ═══ -->
+<section class="hero">
+  <div class="hero-bg" aria-hidden="true"></div>
+  <div class="hero-scan" aria-hidden="true"></div>
+  <div class="hero-rings" aria-hidden="true">
+    <div class="hero-ring"></div>
+    <div class="hero-ring"></div>
+    <div class="hero-ring"></div>
+    <div class="hero-ring"></div>
+  </div>
+
+  <div class="hero-left" style="animation: fadeUp 0.9s ease both;">
+    <div class="hero-badge">
+      <span class="badge-dot" aria-hidden="true"></span>
+      AI Content Detection Platform · Live
+    </div>
+    <h1>Was this made<br>by a <em>human?</em></h1>
+    <p class="hero-body">AuthentiGuard analyses text, images, audio, video, and code, and tells you exactly what it found, which model made it, and signs the evidence so it holds up anywhere.</p>
+    <div class="hero-actions">
+      <a href="#demo" class="btn-primary">Run a Detection <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M8 2l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a href="mailto:enterprise@authentic.inc" class="btn-secondary">Enterprise API →</a>
+    </div>
+  </div>
+
+  <div class="hero-right">
+    <div class="score-card" aria-hidden="true">
+      <div class="score-toolbar">
+        <div class="score-dots"><div class="score-dot"></div><div class="score-dot"></div><div class="score-dot"></div></div>
+        <span class="score-status">Analysis complete</span>
+      </div>
+      <div class="score-body">
+        <div class="score-file">
+          <div class="score-file-icon">TXT</div>
+          <div><div class="score-file-name">press-release-draft.txt</div><div class="score-file-meta">1,247 words · Text analysis</div></div>
+          <div class="score-file-badge">AI Detected</div>
+        </div>
+        <div class="score-meter">
+          <div class="score-meter-label"><span class="score-meter-title">AI Probability Score</span><span class="score-meter-val">0.87</span></div>
+          <div class="score-track"><div class="score-fill"></div></div>
+          <div class="score-track-labels"><span class="score-track-label">0.0 — Human</span><span class="score-track-label">0.5 — Uncertain</span><span class="score-track-label">1.0 — AI</span></div>
+        </div>
+        <div class="score-verdict">
+          <div class="verdict-label">AI</div>
+          <div><div class="verdict-model">Likely generated by <strong>GPT-4o</strong></div><div class="verdict-model" style="margin-top:4px">Confidence: <strong>High (87%)</strong></div></div>
+        </div>
+        <div class="score-rows">
+          <div class="score-row"><span class="score-row-key">Layer 01 / DeBERTa-v3</span><span class="score-row-val ai">91%</span></div>
+          <div class="score-row"><span class="score-row-key">Layer 02 / Statistical</span><span class="score-row-val ai">84%</span></div>
+          <div class="score-row"><span class="score-row-key">Layer 03 / Stylometric</span><span class="score-row-val uncertain">78%</span></div>
+          <div class="score-row"><span class="score-row-key">Signed output</span><span class="score-row-val human">✓ Certified</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ TICKER ═══ -->
+<div class="ticker-strip" aria-hidden="true">
+  <div class="ticker-inner">
+    <span class="ticker-item">Text Detection · DeBERTa-v3 Ensemble</span>
+    <span class="ticker-item">Audio Deepfake · Spectral Analysis</span>
+    <span class="ticker-item">Image Forensics · GAN Fingerprinting</span>
+    <span class="ticker-item">Video Analysis · Frame-level Detection</span>
+    <span class="ticker-item">Code Origin · Copilot & GPT Patterns</span>
+    <span class="ticker-item">Cryptographic Signing · Platt Scaling</span>
+    <span class="ticker-item">5 Media Types · 4 Detection Layers</span>
+    <span class="ticker-item">Model Attribution · GPT-4 · Claude · Midjourney</span>
+    <span class="ticker-item">Text Detection · DeBERTa-v3 Ensemble</span>
+    <span class="ticker-item">Audio Deepfake · Spectral Analysis</span>
+    <span class="ticker-item">Image Forensics · GAN Fingerprinting</span>
+    <span class="ticker-item">Video Analysis · Frame-level Detection</span>
+    <span class="ticker-item">Code Origin · Copilot & GPT Patterns</span>
+    <span class="ticker-item">Cryptographic Signing · Platt Scaling</span>
+    <span class="ticker-item">5 Media Types · 4 Detection Layers</span>
+    <span class="ticker-item">Model Attribution · GPT-4 · Claude · Midjourney</span>
+  </div>
+</div>
+
+<!-- ═══ DETECTION ═══ -->
+<section class="section" id="detection">
+  <div class="section-header">
+    <div>
+      <p class="section-eyebrow" data-n="01">What We Detect</p>
+      <h2>Five content types.<br><em>One answer.</em></h2>
+    </div>
+    <p class="section-sub">Every content type runs through a dedicated detection pipeline, not a generic model. Each pipeline is purpose-built for the artifacts that specific AI systems leave behind.</p>
+  </div>
+  <div class="content-types">
+    <div class="content-type active reveal" tabindex="0" role="button"><div class="ct-icon" aria-hidden="true">✦</div><p class="ct-type">Text</p><p class="ct-detects">AI-written articles, essays, emails, and reports.</p><div class="ct-tags"><span class="ct-tag">GPT-4 / Claude</span><span class="ct-tag">Gemini / Llama</span><span class="ct-tag">90–95% accuracy</span></div></div>
+    <div class="content-type reveal" tabindex="0" role="button"><div class="ct-icon" aria-hidden="true">◈</div><p class="ct-type">Images</p><p class="ct-detects">DALL-E, Midjourney, and Stable Diffusion generated images.</p><div class="ct-tags"><span class="ct-tag">GAN fingerprinting</span><span class="ct-tag">Pixel forensics</span><span class="ct-tag">Metadata analysis</span></div></div>
+    <div class="content-type reveal" tabindex="0" role="button"><div class="ct-icon" aria-hidden="true">◎</div><p class="ct-type">Audio</p><p class="ct-detects">Voice cloning, AI-generated speech, deepfake phone calls.</p><div class="ct-tags"><span class="ct-tag">ElevenLabs / VALL-E</span><span class="ct-tag">Spectral analysis</span><span class="ct-tag">92–96% accuracy</span></div></div>
+    <div class="content-type reveal" tabindex="0" role="button"><div class="ct-icon" aria-hidden="true">▣</div><p class="ct-type">Video</p><p class="ct-detects">Deepfake faces and AI-generated video content.</p><div class="ct-tags"><span class="ct-tag">Face swap detection</span><span class="ct-tag">Frame-level scan</span><span class="ct-tag">Temporal analysis</span></div></div>
+    <div class="content-type reveal" tabindex="0" role="button"><div class="ct-icon" aria-hidden="true">⌘</div><p class="ct-type">Code</p><p class="ct-detects">GitHub Copilot and ChatGPT-generated code patterns.</p><div class="ct-tags"><span class="ct-tag">Copilot patterns</span><span class="ct-tag">GPT-4 signatures</span><span class="ct-tag">AST analysis</span></div></div>
+  </div>
+</section>
+
+<!-- ═══ OUTPUT ═══ -->
+<section class="section section-output" id="output">
+  <div class="section-header">
+    <div>
+      <p class="section-eyebrow" data-n="02">What You Get Back</p>
+      <h2>Four outputs.<br><em>Full picture.</em></h2>
+    </div>
+    <p class="section-sub">Not a single number. Every analysis returns a structured report with a score, a verdict, a model attribution, and a cryptographic signature, usable in court, in newsrooms, in classrooms.</p>
+  </div>
+  <div class="output-grid">
+    <div class="output-item reveal"><div class="output-num">0<sub>→1</sub></div><p class="output-title">Probability Score</p><p class="output-desc">A calibrated float from 0 (human) to 1 (AI). Not a binary guess, a precise probability with confidence intervals from the meta-classifier.</p></div>
+    <div class="output-item reveal"><div class="output-num" style="font-size:32px;padding-top:8px">AI /<br>HUMAN /<br>?</div><p class="output-title">Verdict Label</p><p class="output-desc">A clean, readable classification. AI, HUMAN, or UNCERTAIN when the score falls between 0.4 and 0.6 and a definitive call cannot be made.</p></div>
+    <div class="output-item reveal"><div class="output-num" style="font-size:28px;padding-top:12px;line-height:1.2">GPT-4o</div><p class="output-title">Model Attribution</p><p class="output-desc">The most likely AI model that generated the content. GPT-4, Claude, Midjourney, ElevenLabs, Copilot, and more.</p></div>
+    <div class="output-item reveal"><div class="output-num" style="font-size:28px;padding-top:12px">✓ <span style="font-size:18px;color:var(--text3)">Signed</span></div><p class="output-title">Forensic Report</p><p class="output-desc">A cryptographically signed, timestamped PDF with the full reasoning chain, accepted as evidence in legal, academic, and editorial contexts.</p></div>
+  </div>
+</section>
+
+<!-- ═══ AUDIENCES ═══ -->
+<section class="section" id="audiences">
+  <div class="section-header">
+    <div>
+      <p class="section-eyebrow" data-n="03">Who It's For</p>
+      <h2>Every field where<br><em>truth is evidence.</em></h2>
+    </div>
+    <p class="section-sub">AuthentiGuard was built for the people whose work depends on knowing what is real, and whose reputation depends on getting it right.</p>
+  </div>
+  <div class="audience-grid">
+    <div class="audience-item reveal"><div class="audience-icon" aria-hidden="true">◐</div><div><p class="audience-role">Journalists</p><p class="audience-desc">Verify whether a photo, audio clip, or source document is genuine before publishing. Protect your newsroom from fabricated evidence.</p><p class="audience-usecase">→ Verify before you publish</p></div></div>
+    <div class="audience-item reveal"><div class="audience-icon" aria-hidden="true">◑</div><div><p class="audience-role">Universities</p><p class="audience-desc">Detect AI-written essays with sentence-level attribution. Know which paragraphs were written by the student and which weren't.</p><p class="audience-usecase">→ Sentence-level breakdown</p></div></div>
+    <div class="audience-item reveal"><div class="audience-icon" aria-hidden="true">◒</div><div><p class="audience-role">Banks & Call Centers</p><p class="audience-desc">Catch voice cloning fraud in real-time during live calls. Flag synthetic speech before a transaction is authorized.</p><p class="audience-usecase">→ Real-time phone analysis</p></div></div>
+    <div class="audience-item reveal"><div class="audience-icon" aria-hidden="true">◓</div><div><p class="audience-role">Social Platforms</p><p class="audience-desc">Integrate AuthentiGuard via API to flag AI-generated content at scale, before it spreads, not after.</p><p class="audience-usecase">→ API at scale</p></div></div>
+    <div class="audience-item reveal"><div class="audience-icon" aria-hidden="true">◔</div><div><p class="audience-role">Legal Teams</p><p class="audience-desc">Receive signed forensic reports admissible as evidence. Verify whether documents, recordings, or images submitted to court are genuine.</p><p class="audience-usecase">→ Court-ready signed report</p></div></div>
+    <div class="audience-item reveal"><div class="audience-icon" aria-hidden="true">◕</div><div><p class="audience-role">Anyone</p><p class="audience-desc">Install the browser extension. It scans any webpage automatically and shows a live authenticity score on every piece of content you read.</p><p class="audience-usecase">→ Browser extension (Q3 2026)</p></div></div>
+  </div>
+</section>
+
+<!-- ═══ DEMO ═══ -->
+<section class="section demo-section" id="demo">
+  <div>
+    <p class="section-eyebrow" data-n="04">Live Detection</p>
+    <h2 style="margin-top:16px">Paste anything.<br><em>See the verdict.</em></h2>
+  </div>
+
+  <div class="demo-layout">
+    <!-- LEFT: Input -->
+    <div>
+      <div class="demo-tabs" role="tablist">
+        <button class="demo-tab" role="tab" aria-selected="true" data-tab="text">Text</button>
+        <button class="demo-tab" role="tab" aria-selected="false" data-tab="image">Image URL</button>
+        <button class="demo-tab" role="tab" aria-selected="false" data-tab="code">Code</button>
+        <button class="demo-tab" role="tab" aria-selected="false" data-tab="audio">Audio</button>
+        <button class="demo-tab" role="tab" aria-selected="false" data-tab="video">Video</button>
+      </div>
+
+      <!-- Text panel -->
+      <div class="demo-panel active" id="panel-text" role="tabpanel">
+        <div class="demo-input-area">
+          <div class="demo-bar"><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><span class="demo-bar-url">authentiguard.io / analyze / text</span></div>
+          <textarea class="demo-textarea" id="input-text" placeholder="Paste text to analyse..." style="height:172px" aria-label="Text to analyse"></textarea>
+          <div class="demo-meta"><span class="char-count" id="count-text">0 chars</span><button class="clear-btn" onclick="clearInput('text')">Clear</button></div>
+          <div class="sample-row"><button class="sample-btn" onclick="loadSample('text','ai')">AI sample</button><button class="sample-btn" onclick="loadSample('text','human')">Human sample</button><button class="sample-btn" onclick="loadSample('text','mixed')">Mixed sample</button></div>
+          <button class="demo-run" id="run-text" onclick="runAnalysis('text')" aria-live="polite"><span class="btn-text">Analyse Text →</span><span class="spinner"></span></button>
+        </div>
+        <p class="demo-hint">Results appear in under 2 seconds. No account required for text analysis.</p>
+      </div>
+
+      <!-- Image panel -->
+      <div class="demo-panel" id="panel-image" role="tabpanel">
+        <div class="demo-input-area">
+          <div class="demo-bar"><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><span class="demo-bar-url">authentiguard.io / analyze / image</span></div>
+
+          <!-- Upload zone -->
+          <div class="upload-zone" id="upload-zone" role="button" tabindex="0" aria-label="Upload a photo from your device">
+            <input type="file" id="upload-input" accept="image/jpeg,image/png,image/webp,image/gif" aria-label="Choose photo file">
+            <div class="upload-zone-icon" aria-hidden="true">📷</div>
+            <div class="upload-zone-text"><strong>Tap to upload a photo</strong> or drag & drop</div>
+            <div class="upload-zone-hint">JPG, PNG, WebP, GIF · Max 10 MB</div>
+          </div>
+
+          <!-- Upload preview (shown after file selected) -->
+          <div class="upload-preview" id="upload-preview" aria-live="polite">
+            <img class="upload-preview-thumb" id="upload-thumb" src="" alt="Uploaded photo preview">
+            <div class="upload-preview-info">
+              <div class="upload-preview-name" id="upload-name"></div>
+              <div class="upload-preview-size" id="upload-size"></div>
+            </div>
+            <button class="upload-preview-remove" onclick="clearUpload()" aria-label="Remove uploaded photo">Remove</button>
+          </div>
+
+          <button class="demo-run" id="run-image-upload" onclick="runUploadAnalysis()" aria-live="polite" style="display:none"><span class="btn-text">Analyse Photo →</span><span class="spinner"></span></button>
+
+          <div class="upload-divider">or paste a URL</div>
+
+          <textarea class="demo-textarea" id="input-image" placeholder="Paste a direct image URL (jpg, png, webp)..." style="height:90px" aria-label="Image URL to analyse"></textarea>
+          <div class="demo-meta"><span class="char-count" id="count-image">0 chars</span><button class="clear-btn" onclick="clearInput('image')">Clear</button></div>
+          <div class="sample-row"><button class="sample-btn" onclick="loadSample('image','ai')">AI image URL</button><button class="sample-btn" onclick="loadSample('image','real')">Real photo URL</button></div>
+          <button class="demo-run" id="run-image" onclick="runAnalysis('image')" aria-live="polite"><span class="btn-text">Analyse Image URL →</span><span class="spinner"></span></button>
+        </div>
+      </div>
+
+      <!-- Code panel -->
+      <div class="demo-panel" id="panel-code" role="tabpanel">
+        <div class="demo-input-area">
+          <div class="demo-bar"><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><span class="demo-bar-url">authentiguard.io / analyze / code</span></div>
+          <textarea class="demo-textarea code-input" id="input-code" placeholder="Paste code to analyse..." style="height:200px" aria-label="Code to analyse"></textarea>
+          <div class="demo-meta"><span class="char-count" id="count-code">0 chars</span><button class="clear-btn" onclick="clearInput('code')">Clear</button></div>
+          <div class="sample-row"><button class="sample-btn" onclick="loadSample('code','ai')">AI-generated code</button><button class="sample-btn" onclick="loadSample('code','human')">Human code</button></div>
+          <button class="demo-run" id="run-code" onclick="runAnalysis('code')" aria-live="polite"><span class="btn-text">Analyse Code →</span><span class="spinner"></span></button>
+        </div>
+      </div>
+
+      <!-- Audio panel -->
+      <div class="demo-panel" id="panel-audio" role="tabpanel">
+        <div class="demo-input-area">
+          <div class="demo-bar"><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><span class="demo-bar-url">authentiguard.io / analyze / audio</span></div>
+
+          <div class="upload-zone" id="upload-zone-audio" role="button" tabindex="0" aria-label="Upload an audio file from your device">
+            <input type="file" id="upload-input-audio" accept="audio/mpeg,audio/wav,audio/ogg,audio/flac,audio/aac,audio/mp4,audio/webm,audio/x-m4a" aria-label="Choose audio file">
+            <div class="upload-zone-icon" aria-hidden="true">🎙</div>
+            <div class="upload-zone-text"><strong>Tap to upload audio</strong> or drag & drop</div>
+            <div class="upload-zone-hint">MP3, WAV, OGG, FLAC, AAC, M4A · Max 50 MB</div>
+          </div>
+
+          <div class="upload-preview" id="upload-preview-audio" aria-live="polite">
+            <div class="upload-preview-icon" aria-hidden="true">🎵</div>
+            <div class="upload-preview-info">
+              <div class="upload-preview-name" id="upload-name-audio"></div>
+              <div class="upload-preview-size" id="upload-size-audio"></div>
+            </div>
+            <button class="upload-preview-remove" onclick="clearMediaUpload('audio')" aria-label="Remove uploaded audio">Remove</button>
+          </div>
+
+          <div class="upload-player" id="upload-player-audio" style="display:none">
+            <audio id="upload-media-audio" controls preload="metadata"></audio>
+          </div>
+
+          <button class="demo-run" id="run-audio-upload" onclick="runMediaUploadAnalysis('audio')" aria-live="polite" style="display:none"><span class="btn-text">Analyse Audio →</span><span class="spinner"></span></button>
+        </div>
+        <p class="demo-hint">Supports voice cloning detection, AI speech synthesis, and deepfake audio analysis.</p>
+      </div>
+
+      <!-- Video panel -->
+      <div class="demo-panel" id="panel-video" role="tabpanel">
+        <div class="demo-input-area">
+          <div class="demo-bar"><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><span class="demo-bar-url">authentiguard.io / analyze / video</span></div>
+
+          <div class="upload-zone" id="upload-zone-video" role="button" tabindex="0" aria-label="Upload a video file from your device">
+            <input type="file" id="upload-input-video" accept="video/mp4,video/webm,video/quicktime,video/x-msvideo,video/x-matroska" aria-label="Choose video file">
+            <div class="upload-zone-icon" aria-hidden="true">🎬</div>
+            <div class="upload-zone-text"><strong>Tap to upload video</strong> or drag & drop</div>
+            <div class="upload-zone-hint">MP4, WebM, MOV, AVI, MKV · Max 100 MB</div>
+          </div>
+
+          <div class="upload-preview" id="upload-preview-video" aria-live="polite">
+            <div class="upload-preview-icon" aria-hidden="true">🎞</div>
+            <div class="upload-preview-info">
+              <div class="upload-preview-name" id="upload-name-video"></div>
+              <div class="upload-preview-size" id="upload-size-video"></div>
+            </div>
+            <button class="upload-preview-remove" onclick="clearMediaUpload('video')" aria-label="Remove uploaded video">Remove</button>
+          </div>
+
+          <div class="upload-player" id="upload-player-video" style="display:none">
+            <video id="upload-media-video" controls preload="metadata"></video>
+          </div>
+
+          <button class="demo-run" id="run-video-upload" onclick="runMediaUploadAnalysis('video')" aria-live="polite" style="display:none"><span class="btn-text">Analyse Video →</span><span class="spinner"></span></button>
+        </div>
+        <p class="demo-hint">Supports deepfake face detection, AI-generated video analysis, and frame-level scanning.</p>
+      </div>
+    </div>
+
+    <!-- RIGHT: Result -->
+    <div class="result-panel" aria-live="polite" aria-atomic="true">
+      <!-- Placeholder -->
+      <div class="rp-placeholder" id="rp-state-placeholder">
+        <div class="rp-placeholder-icon" aria-hidden="true">◎</div>
+        <div class="rp-placeholder-title">Awaiting analysis</div>
+        <div class="rp-placeholder-sub">Paste content and click analyse to see results</div>
+      </div>
+      <!-- Loading -->
+      <div class="rp-loading" id="rp-state-loading">
+        <div class="rp-loading-bar"><div class="rp-loading-fill"></div></div>
+        <div class="rp-step" id="step-0"><div class="rp-step-dot"></div>Parsing input</div>
+        <div class="rp-step" id="step-1"><div class="rp-step-dot"></div>Running 4-layer ensemble</div>
+        <div class="rp-step" id="step-2"><div class="rp-step-dot"></div>Meta-classifier scoring</div>
+        <div class="rp-step" id="step-3"><div class="rp-step-dot"></div>Generating signed report</div>
+      </div>
+      <!-- Error -->
+      <div class="rp-error" id="rp-state-error">
+        <div class="rp-error-title">Analysis Failed</div>
+        <div class="rp-error-msg" id="rp-error-msg"></div>
+      </div>
+      <!-- Result -->
+      <div class="rp-result" id="rp-state-result">
+        <div class="rp-header"><span class="rp-title">Analysis Result</span><span class="rp-id" id="rp-req-id"></span></div>
+        <div class="rp-verdict-block">
+          <div class="rp-score-big" id="rp-score"></div>
+          <div class="rp-right">
+            <div class="rp-verdict-label" id="rp-verdict"></div>
+            <div class="rp-model-guess" id="rp-attribution"></div>
+            <div class="rp-model-guess" id="rp-confidence" style="margin-top:4px;color:var(--text3)"></div>
+          </div>
+        </div>
+        <div class="rp-layers" id="rp-layers"></div>
+        <div class="rp-flags" id="rp-flags-section"><div class="rp-flags-title">Detection Indicators</div><div id="rp-flags-list"></div></div>
+        <div class="rp-reasoning" id="rp-reasoning-section"><div class="rp-reasoning-title">Reasoning</div><div class="rp-reasoning-text" id="rp-reasoning-text"></div></div>
+        <div class="rp-footer">
+          <span class="rp-signed" id="rp-signed">✓ Cryptographically signed</span>
+          <div class="rp-actions">
+            <button class="rp-action-btn" id="btn-copy" onclick="copyResult()">Copy JSON</button>
+            <button class="rp-action-btn" onclick="downloadReport()">Download Report</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ CTA ═══ -->
+<section class="section-cta">
+  <div class="cta-bg" aria-hidden="true"></div>
+  <p class="section-eyebrow" data-n="" style="justify-content:center;margin-bottom:32px">Start Now</p>
+  <h2>Run your first<br>detection <em>free.</em></h2>
+  <p class="cta-sub">No account required for text and code analysis. API access, audio/video detection, signed reports, and enterprise volume pricing on request.</p>
+  <div class="cta-actions">
+    <a href="#demo" class="btn-primary">Try AuthentiGuard Free <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M8 2l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+    <a href="mailto:enterprise@authentic.inc" class="btn-secondary">Enterprise inquiry →</a>
+  </div>
+  <p class="cta-compliance">SOC 2 Type I compliance in progress · GDPR compliant · Data deleted after analysis</p>
+</section>
+
+<!-- ═══ FOOTER ═══ -->
+<footer class="footer">
+  <div class="footer-left">
+    <div class="footer-logo">Authenti<span>Guard</span></div>
+    <a href="https://authentic.inc" class="footer-parent-link">↗ An Authentic Inc. product · authentic.inc</a>
+  </div>
+  <ul class="footer-links">
+    <li><a href="#">API Docs</a></li>
+    <li><a href="#">Privacy</a></li>
+    <li><a href="#">Terms</a></li>
+    <li><a href="mailto:enterprise@authentic.inc">Enterprise</a></li>
+    <li><a href="#">Press</a></li>
+  </ul>
+  <span class="footer-copy">© 2026 Authentic Inc.</span>
+</footer>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   CONFIG — operator sets BASE_URL
+   ═══════════════════════════════════════════════════════════ */
+const CONFIG = {
+  BASE_URL:   window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+              ? 'http://localhost:8000'
+              : 'https://api.authentiguard.io',
+  RATE_LIMIT: 4000,  // ms between requests
+};
+
+/* ═══════════════════════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════════════════════ */
+let currentTab  = 'text';
+let lastResult  = null;
+let lastRunTime = 0;
+let isRunning   = false;
+
+/* ═══════════════════════════════════════════════════════════
+   SAMPLE CONTENT
+   ═══════════════════════════════════════════════════════════ */
+const SAMPLES = {
+  text: {
+    ai: "The implementation of quantum computing represents a transformative shift in computational paradigms. Unlike classical binary systems that process information as discrete states of 0 or 1, quantum systems leverage the principles of superposition and entanglement to achieve exponentially greater processing capabilities across complex problem domains. This technological advancement has significant implications for cryptography, drug discovery, and optimization problems that were previously considered computationally intractable.",
+    human: "I spent three hours yesterday trying to fix a bug that turned out to be a missing comma. Three hours. My coffee went cold twice. The rubber duck on my desk judged me silently the whole time. Eventually my cat walked across the keyboard and somehow that helped me spot it. I'm not sure what that says about my debugging skills, but honestly at this point I'll take wins however they come.",
+    mixed: "Machine learning models have shown remarkable progress in natural language understanding tasks. But here's the thing nobody talks about: half the time you're debugging a pipeline, the issue isn't the model at all. It's some janky data preprocessing step from six months ago that somebody wrote at 2am. The architecture of transformer-based models enables parallel processing of sequential data through self-attention mechanisms, fundamentally changing how we approach NLP tasks. Meanwhile in production, the whole thing falls over because someone forgot to handle unicode properly."
+  },
+  image: {
+    ai: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/32/Eo_circle_blue_letter-a.svg/240px-Eo_circle_blue_letter-a.svg.png",
+    real: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png"
+  },
+  code: {
+    ai: `def calculate_fibonacci(n: int) -> list[int]:
+    """Calculate the first n numbers in the Fibonacci sequence.
+
+    Args:
+        n: The number of Fibonacci numbers to generate. Must be positive.
+
+    Returns:
+        A list containing the first n Fibonacci numbers.
+
+    Raises:
+        ValueError: If n is less than or equal to 0.
+
+    Example:
+        >>> calculate_fibonacci(8)
+        [0, 1, 1, 2, 3, 5, 8, 13]
+    """
+    if n <= 0:
+        raise ValueError(f"Expected positive integer, got {n}")
+
+    sequence: list[int] = [0, 1]
+    while len(sequence) < n:
+        sequence.append(sequence[-1] + sequence[-2])
+    return sequence[:n]`,
+    human: `def fib(n):
+    # this is hacky but whatever, it works
+    if n < 1:
+        return []
+    out = [0, 1]
+    for _ in range(n - 2):
+        out.append(out[-1] + out[-2])
+    # TODO: add memoization if this gets slow
+    return out[:n]  # slice just in case`
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════
+   TAB SWITCHING
+   ═══════════════════════════════════════════════════════════ */
+document.querySelectorAll('.demo-tab').forEach(function(tab) {
+  tab.addEventListener('click', function() {
+    var target = this.getAttribute('data-tab');
+    currentTab = target;
+    document.querySelectorAll('.demo-tab').forEach(function(t) { t.setAttribute('aria-selected', 'false'); });
+    this.setAttribute('aria-selected', 'true');
+    document.querySelectorAll('.demo-panel').forEach(function(p) { p.classList.remove('active'); });
+    document.getElementById('panel-' + target).classList.add('active');
+    showState('placeholder');
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════
+   INPUT HELPERS
+   ═══════════════════════════════════════════════════════════ */
+['text', 'image', 'code'].forEach(function(id) {
+  var el = document.getElementById('input-' + id);
+  if (el) {
+    el.addEventListener('input', function() {
+      document.getElementById('count-' + id).textContent = this.value.length + ' chars';
+    });
+  }
+});
+
+function clearInput(type) {
+  var el = document.getElementById('input-' + type);
+  if (el) { el.value = ''; }
+  var cnt = document.getElementById('count-' + type);
+  if (cnt) { cnt.textContent = '0 chars'; }
+  showState('placeholder');
+}
+
+function loadSample(type, variant) {
+  var content = SAMPLES[type] && SAMPLES[type][variant];
+  if (!content) return;
+  var el = document.getElementById('input-' + type);
+  if (el) {
+    el.value = content;
+    document.getElementById('count-' + type).textContent = content.length + ' chars';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RESULT PANEL STATES
+   ═══════════════════════════════════════════════════════════ */
+function showState(state) {
+  ['placeholder', 'loading', 'error', 'result'].forEach(function(s) {
+    var el = document.getElementById('rp-state-' + s);
+    if (el) el.style.display = (s === state) ? (s === 'result' ? 'block' : s === 'placeholder' ? 'flex' : 'block') : 'none';
+  });
+}
+
+function showLoading() {
+  showState('loading');
+  var steps = [
+    document.getElementById('step-0'),
+    document.getElementById('step-1'),
+    document.getElementById('step-2'),
+    document.getElementById('step-3')
+  ];
+  steps.forEach(function(s) { s.className = 'rp-step'; });
+  steps[0].classList.add('active');
+
+  setTimeout(function() { steps[0].classList.replace('active', 'done'); steps[1].classList.add('active'); }, 500);
+  setTimeout(function() { steps[1].classList.replace('active', 'done'); steps[2].classList.add('active'); }, 1100);
+  setTimeout(function() { steps[2].classList.replace('active', 'done'); steps[3].classList.add('active'); }, 1800);
+}
+
+function showError(msg) {
+  showState('error');
+  document.getElementById('rp-error-msg').textContent = msg;
+}
+
+function showResult(data) {
+  showState('result');
+
+  // score
+  var scoreEl = document.getElementById('rp-score');
+  scoreEl.textContent = data.score.toFixed(2);
+  scoreEl.className = 'rp-score-big verdict-' + (data.verdict === 'AI' ? 'ai' : data.verdict === 'HUMAN' ? 'human' : 'uncertain');
+
+  // verdict
+  var verdictEl = document.getElementById('rp-verdict');
+  var verdictMap = { AI: 'AI GENERATED', HUMAN: 'HUMAN AUTHORED', UNCERTAIN: 'UNCERTAIN' };
+  verdictEl.textContent = verdictMap[data.verdict] || data.verdict;
+  verdictEl.className = 'rp-verdict-label verdict-' + (data.verdict === 'AI' ? 'ai' : data.verdict === 'HUMAN' ? 'human' : 'uncertain');
+
+  // attribution
+  document.getElementById('rp-attribution').innerHTML = 'Likely: <em>' + (data.model_attribution || 'Unknown') + '</em>';
+  document.getElementById('rp-confidence').textContent = 'Confidence: ' + capitalize(data.confidence || 'unknown') + ' · 4 layers analysed';
+
+  // request id
+  document.getElementById('rp-req-id').textContent = data.request_id || '';
+
+  // layers
+  var layersEl = document.getElementById('rp-layers');
+  layersEl.innerHTML = '';
+  var layerNames = { linguistic: 'Linguistic', statistical: 'Statistical', stylometric: 'Stylometric', meta_classifier: 'Meta-classifier' };
+  if (data.layers) {
+    Object.keys(data.layers).forEach(function(key) {
+      var val = data.layers[key];
+      var pct = Math.round(val * 100);
+      var cls = val > 0.65 ? 'high' : val >= 0.40 ? 'mid' : 'low';
+      var row = document.createElement('div');
+      row.className = 'layer-row';
+      row.innerHTML = '<span class="layer-name">' + (layerNames[key] || key) + '</span>' +
+        '<div class="layer-bar-track"><div class="layer-bar-fill ' + cls + '" id="bar-' + key + '" style="width:' + pct + '%"></div></div>' +
+        '<span class="layer-pct">' + pct + '%</span>';
+      layersEl.appendChild(row);
+    });
+    // trigger bar animation
+    setTimeout(function() {
+      layersEl.querySelectorAll('.layer-bar-fill').forEach(function(bar) {
+        bar.style.transform = 'scaleX(1)';
+      });
+    }, 50);
+  }
+
+  // flags
+  var flagsList = document.getElementById('rp-flags-list');
+  flagsList.innerHTML = '';
+  if (data.flags && data.flags.length) {
+    data.flags.forEach(function(flag) {
+      var p = document.createElement('p');
+      p.className = 'rp-flag';
+      p.innerHTML = '<span class="rp-flag-arrow">→</span>' + escapeHtml(flag);
+      flagsList.appendChild(p);
+    });
+    document.getElementById('rp-flags-section').style.display = 'block';
+  } else {
+    document.getElementById('rp-flags-section').style.display = 'none';
+  }
+
+  // reasoning
+  if (data.reasoning) {
+    document.getElementById('rp-reasoning-text').textContent = data.reasoning;
+    document.getElementById('rp-reasoning-section').style.display = 'block';
+  } else {
+    document.getElementById('rp-reasoning-section').style.display = 'none';
+  }
+
+  // signed timestamp
+  var ts = data.signed_at || new Date().toISOString();
+  document.getElementById('rp-signed').textContent = '✓ Cryptographically signed · ' + ts.replace('T', ' ').replace(/\.\d+Z$/, 'Z');
+
+  lastResult = data;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   API
+   ═══════════════════════════════════════════════════════════ */
+async function fetchAnalysis(type, content) {
+  var endpoints = {
+    text:  CONFIG.BASE_URL + '/api/v1/analyze/text',
+    code:  CONFIG.BASE_URL + '/api/v1/analyze/code',
+    image: CONFIG.BASE_URL + '/api/v1/analyze/image',
+  };
+  var bodies = {
+    text:  { content: content },
+    code:  { content: content },
+    image: { url: content },
+  };
+
+  var headers = { 'Content-Type': 'application/json' };
+  if (accessToken) headers['Authorization'] = 'Bearer ' + accessToken;
+
+  var res = await fetch(endpoints[type], {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify(bodies[type]),
+  });
+
+  var data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    throw new Error('Could not read the server response. Please try again.');
+  }
+
+  if (!res.ok) {
+    var errMap = {
+      content_too_short: 'Please provide more content to analyse.',
+      rate_limited: 'Rate limit reached. Please wait a moment.',
+      invalid_url: 'Please enter a valid, publicly accessible image URL.',
+      internal_error: 'The analysis server encountered an error. Please try again.',
+    };
+    throw new Error(errMap[data.error] || data.message || 'Error ' + res.status);
+  }
+
+  return data;
+}
+
+async function runAnalysis(type) {
+  if (!isLoggedIn()) { openAuth('register'); return; }
+  if (isRunning) return;
+
+  // rate limit
+  var now = Date.now();
+  if (now - lastRunTime < CONFIG.RATE_LIMIT) {
+    var wait = Math.ceil((CONFIG.RATE_LIMIT - (now - lastRunTime)) / 1000);
+    showError('Please wait ' + wait + ' second' + (wait > 1 ? 's' : '') + ' before running another analysis.');
+    return;
+  }
+
+  // get content
+  var inputEl = document.getElementById('input-' + type);
+  if (!inputEl) return;
+  var content = inputEl.value.trim();
+
+  // validate
+  if (type === 'image') {
+    if (!content.startsWith('http://') && !content.startsWith('https://')) {
+      showError('Please enter a valid URL starting with http:// or https://');
+      return;
+    }
+  } else {
+    if (content.length < 40) {
+      showError('Please provide at least 40 characters of content to analyse.');
+      return;
+    }
+    if (content.length > 15000) {
+      showError('Content exceeds the 15,000 character limit. Please shorten your input.');
+      return;
+    }
+  }
+
+  isRunning = true;
+  lastRunTime = Date.now();
+
+  var btn = document.getElementById('run-' + type);
+  if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+
+  showLoading();
+
+  try {
+    var data = await fetchAnalysis(type, content);
+    showResult(data);
+  } catch (err) {
+    var msg = err.message || 'An unexpected error occurred.';
+    if (msg === 'Failed to fetch' || msg.includes('NetworkError')) {
+      msg = 'Network error. Check your connection and try again.';
+    }
+    showError(msg);
+  } finally {
+    isRunning = false;
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FILE UPLOAD (image, audio, video)
+   ═══════════════════════════════════════════════════════════ */
+var uploadedFiles = { image: null, audio: null, video: null };
+
+var UPLOAD_CONFIG = {
+  image: {
+    allowed: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+    maxSize: 10 * 1024 * 1024,
+    maxLabel: '10 MB',
+    typeLabel: 'JPG, PNG, WebP, or GIF image',
+    hasThumb: true,
+    hasPlayer: false,
+  },
+  audio: {
+    allowed: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/flac', 'audio/aac', 'audio/mp4', 'audio/webm', 'audio/x-m4a'],
+    maxSize: 50 * 1024 * 1024,
+    maxLabel: '50 MB',
+    typeLabel: 'MP3, WAV, OGG, FLAC, AAC, or M4A audio file',
+    hasThumb: false,
+    hasPlayer: true,
+    playerTag: 'audio',
+  },
+  video: {
+    allowed: ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska'],
+    maxSize: 100 * 1024 * 1024,
+    maxLabel: '100 MB',
+    typeLabel: 'MP4, WebM, MOV, AVI, or MKV video file',
+    hasThumb: false,
+    hasPlayer: true,
+    playerTag: 'video',
+  },
+};
+
+// Initialize all upload zones
+['image', 'audio', 'video'].forEach(function(mediaType) {
+  var suffix = mediaType === 'image' ? '' : '-' + mediaType;
+  var zone = document.getElementById('upload-zone' + suffix);
+  var input = document.getElementById('upload-input' + suffix);
+  if (!zone || !input) return;
+
+  ['dragenter', 'dragover'].forEach(function(evt) {
+    zone.addEventListener(evt, function(e) {
+      e.preventDefault();
+      zone.classList.add('drag-over');
+    });
+  });
+  ['dragleave', 'drop'].forEach(function(evt) {
+    zone.addEventListener(evt, function(e) {
+      e.preventDefault();
+      zone.classList.remove('drag-over');
+    });
+  });
+  zone.addEventListener('drop', function(e) {
+    var files = e.dataTransfer.files;
+    if (files.length > 0) handleMediaFile(mediaType, files[0]);
+  });
+
+  zone.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+  });
+
+  input.addEventListener('change', function() {
+    if (this.files.length > 0) handleMediaFile(mediaType, this.files[0]);
+  });
+});
+
+function handleMediaFile(mediaType, file) {
+  var cfg = UPLOAD_CONFIG[mediaType];
+
+  // Validate type
+  if (cfg.allowed.indexOf(file.type) === -1) {
+    showError('Unsupported file type. Please upload a ' + cfg.typeLabel + '.');
+    return;
+  }
+  // Validate size
+  if (file.size > cfg.maxSize) {
+    showError('File is too large. Maximum size is ' + cfg.maxLabel + '.');
+    return;
+  }
+
+  uploadedFiles[mediaType] = file;
+
+  var suffix = mediaType === 'image' ? '' : '-' + mediaType;
+
+  // Image thumbnail preview
+  if (cfg.hasThumb) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      document.getElementById('upload-thumb').src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Audio/Video player preview
+  if (cfg.hasPlayer) {
+    var playerWrap = document.getElementById('upload-player-' + mediaType);
+    var playerEl = document.getElementById('upload-media-' + mediaType);
+    if (playerWrap && playerEl) {
+      var objectUrl = URL.createObjectURL(file);
+      playerEl.src = objectUrl;
+      playerEl.onloadedmetadata = function() {
+        var dur = playerEl.duration;
+        if (isFinite(dur)) {
+          var mins = Math.floor(dur / 60);
+          var secs = Math.floor(dur % 60);
+          var durStr = mins + ':' + (secs < 10 ? '0' : '') + secs;
+          var sizeEl = document.getElementById('upload-size' + suffix);
+          if (sizeEl) sizeEl.textContent = sizeEl.textContent + ' · ' + durStr;
+        }
+      };
+      playerWrap.style.display = 'block';
+    }
+  }
+
+  // File info
+  document.getElementById('upload-name' + suffix).textContent = file.name;
+  var sizeStr = file.size >= 1024 * 1024
+    ? (file.size / (1024 * 1024)).toFixed(1) + ' MB'
+    : (file.size / 1024).toFixed(0) + ' KB';
+  var ext = file.type.split('/')[1] || '';
+  ext = ext.replace('mpeg', 'MP3').replace('wav', 'WAV').replace('ogg', 'OGG')
+           .replace('flac', 'FLAC').replace('aac', 'AAC').replace('x-m4a', 'M4A')
+           .replace('mp4', 'MP4').replace('webm', 'WebM').replace('quicktime', 'MOV')
+           .replace('x-msvideo', 'AVI').replace('x-matroska', 'MKV')
+           .replace('jpeg', 'JPEG').replace('png', 'PNG').replace('webp', 'WebP').replace('gif', 'GIF');
+  document.getElementById('upload-size' + suffix).textContent = sizeStr + ' · ' + ext;
+
+  // Show preview, hide zone, show run button
+  document.getElementById('upload-preview' + suffix).classList.add('active');
+  document.getElementById('upload-zone' + suffix).style.display = 'none';
+  document.getElementById('run-' + mediaType + '-upload').style.display = 'flex';
+  showState('placeholder');
+}
+
+function clearUpload() {
+  clearMediaUpload('image');
+}
+
+function clearMediaUpload(mediaType) {
+  var suffix = mediaType === 'image' ? '' : '-' + mediaType;
+  var cfg = UPLOAD_CONFIG[mediaType];
+
+  uploadedFiles[mediaType] = null;
+  document.getElementById('upload-input' + suffix).value = '';
+  document.getElementById('upload-preview' + suffix).classList.remove('active');
+  document.getElementById('upload-zone' + suffix).style.display = '';
+  document.getElementById('run-' + mediaType + '-upload').style.display = 'none';
+
+  if (cfg.hasThumb) {
+    document.getElementById('upload-thumb').src = '';
+  }
+  if (cfg.hasPlayer) {
+    var playerWrap = document.getElementById('upload-player-' + mediaType);
+    var playerEl = document.getElementById('upload-media-' + mediaType);
+    if (playerEl) {
+      playerEl.pause();
+      if (playerEl.src) URL.revokeObjectURL(playerEl.src);
+      playerEl.removeAttribute('src');
+      playerEl.load();
+    }
+    if (playerWrap) playerWrap.style.display = 'none';
+  }
+}
+
+function runUploadAnalysis() {
+  runMediaUploadAnalysis('image');
+}
+
+async function runMediaUploadAnalysis(mediaType) {
+  if (!isLoggedIn()) { openAuth('register'); return; }
+  var file = uploadedFiles[mediaType];
+  if (isRunning || !file) return;
+
+  var cfg = UPLOAD_CONFIG[mediaType];
+  var now = Date.now();
+  if (now - lastRunTime < CONFIG.RATE_LIMIT) {
+    var wait = Math.ceil((CONFIG.RATE_LIMIT - (now - lastRunTime)) / 1000);
+    showError('Please wait ' + wait + ' second' + (wait > 1 ? 's' : '') + ' before running another analysis.');
+    return;
+  }
+
+  isRunning = true;
+  lastRunTime = Date.now();
+
+  var btn = document.getElementById('run-' + mediaType + '-upload');
+  if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+
+  showLoading();
+
+  try {
+    var formData = new FormData();
+    formData.append('file', file);
+
+    var uploadHeaders = {};
+    if (accessToken) uploadHeaders['Authorization'] = 'Bearer ' + accessToken;
+
+    var res = await fetch(CONFIG.BASE_URL + '/api/v1/analyze/file', {
+      method: 'POST',
+      headers: uploadHeaders,
+      body: formData,
+    });
+
+    var data;
+    try { data = await res.json(); }
+    catch (e) { throw new Error('Could not read the server response. Please try again.'); }
+
+    if (!res.ok) {
+      var errMap = {
+        content_too_short: 'The file is too short to analyse. Please upload a longer recording.',
+        rate_limited: 'Rate limit reached. Please wait a moment.',
+        unsupported_type: 'This file type is not supported for analysis.',
+        file_too_large: 'File is too large. Maximum size is ' + cfg.maxLabel + '.',
+        internal_error: 'The analysis server encountered an error. Please try again.',
+      };
+      throw new Error(errMap[data.error] || data.message || 'Error ' + res.status);
+    }
+
+    showResult(data);
+  } catch (err) {
+    var msg = err.message || 'An unexpected error occurred.';
+    if (msg === 'Failed to fetch' || msg.includes('NetworkError')) {
+      msg = 'Network error. Check your connection and try again.';
+    }
+    showError(msg);
+  } finally {
+    isRunning = false;
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   COPY & DOWNLOAD
+   ═══════════════════════════════════════════════════════════ */
+function copyResult() {
+  if (!lastResult) return;
+  navigator.clipboard.writeText(JSON.stringify(lastResult, null, 2)).then(function() {
+    var btn = document.getElementById('btn-copy');
+    btn.textContent = 'Copied ✓';
+    btn.classList.add('copied');
+    setTimeout(function() {
+      btn.textContent = 'Copy JSON';
+      btn.classList.remove('copied');
+    }, 2000);
+  });
+}
+
+function downloadReport() {
+  if (!lastResult) return;
+  var d = lastResult;
+  var lines = [
+    '═══════════════════════════════════════════════════════════',
+    '  AUTHENTIGUARD FORENSIC REPORT',
+    '═══════════════════════════════════════════════════════════',
+    '',
+    'Request ID:        ' + (d.request_id || 'N/A'),
+    'Timestamp:         ' + (d.signed_at || new Date().toISOString()),
+    'Verdict:           ' + (d.verdict || 'N/A'),
+    'Score:             ' + (d.score != null ? d.score.toFixed(4) : 'N/A'),
+    'Model Attribution: ' + (d.model_attribution || 'N/A'),
+    'Confidence:        ' + capitalize(d.confidence || 'unknown'),
+    '',
+    '─── LAYER SCORES ───',
+  ];
+  if (d.layers) {
+    Object.keys(d.layers).forEach(function(k) {
+      lines.push('  ' + k + ': ' + Math.round(d.layers[k] * 100) + '%');
+    });
+  }
+  lines.push('');
+  lines.push('─── DETECTION INDICATORS ───');
+  if (d.flags) {
+    d.flags.forEach(function(f) { lines.push('  → ' + f); });
+  }
+  lines.push('');
+  lines.push('─── REASONING ───');
+  lines.push(d.reasoning || 'N/A');
+  lines.push('');
+  lines.push('─── RAW JSON ───');
+  lines.push(JSON.stringify(d, null, 2));
+  lines.push('');
+  lines.push('═══════════════════════════════════════════════════════════');
+  lines.push('This report was generated by AuthentiGuard (authentiguard.io).');
+  lines.push('The analysis result is cryptographically signed and timestamped.');
+  lines.push('For legal or compliance use, request a certified PDF via the API.');
+  lines.push('© 2026 Authentic Inc. All rights reserved.');
+
+  var blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'authentiguard-' + (d.request_id || 'report') + '.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   KEYBOARD
+   ═══════════════════════════════════════════════════════════ */
+document.addEventListener('keydown', function(e) {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    var active = document.activeElement;
+    if (active && active.classList.contains('demo-textarea')) {
+      e.preventDefault();
+      runAnalysis(currentTab);
+    }
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════
+   CONTENT TYPE CLICKS
+   ═══════════════════════════════════════════════════════════ */
+document.querySelectorAll('.content-type').forEach(function(ct) {
+  ct.addEventListener('click', function() {
+    document.querySelectorAll('.content-type').forEach(function(t) { t.classList.remove('active'); });
+    this.classList.add('active');
+  });
+  ct.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') this.click();
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════
+   SCROLL REVEAL
+   ═══════════════════════════════════════════════════════════ */
+var revealObserver = new IntersectionObserver(function(entries) {
+  entries.forEach(function(entry) {
+    if (entry.isIntersecting) {
+      // stagger siblings
+      var parent = entry.target.parentElement;
+      var siblings = parent ? Array.from(parent.querySelectorAll('.reveal')) : [];
+      var idx = siblings.indexOf(entry.target);
+      entry.target.style.transitionDelay = (idx * 0.08) + 's';
+      entry.target.classList.add('in');
+      revealObserver.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.reveal').forEach(function(el) {
+  revealObserver.observe(el);
+});
+
+/* ═══════════════════════════════════════════════════════════
+   UTILS
+   ═══════════════════════════════════════════════════════════ */
+function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+function escapeHtml(s) {
+  var div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+// init
+showState('placeholder');
+
+/* ═══════════════════════════════════════════════════════════
+   AUTHENTICATION
+   ═══════════════════════════════════════════════════════════ */
+var authMode = 'register'; // 'register' or 'login'
+var currentUser = null;
+var accessToken = null;
+
+// Restore session from localStorage
+(function restoreSession() {
+  var saved = localStorage.getItem('ag_user');
+  if (saved) {
+    try {
+      var data = JSON.parse(saved);
+      currentUser = data.user;
+      accessToken = data.accessToken;
+      updateAuthUI();
+    } catch(e) { localStorage.removeItem('ag_user'); }
+  }
+})();
+
+function openAuth(mode) {
+  authMode = mode || 'register';
+  switchAuthTab(authMode);
+  document.getElementById('auth-overlay').classList.add('open');
+  document.getElementById('auth-error').classList.remove('visible');
+  document.getElementById('auth-form').reset();
+  document.body.style.overflow = 'hidden';
+  setTimeout(function() { document.getElementById('auth-email').focus(); }, 100);
+}
+
+function closeAuth() {
+  document.getElementById('auth-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function switchAuthTab(mode) {
+  authMode = mode;
+  document.getElementById('auth-tab-register').classList.toggle('active', mode === 'register');
+  document.getElementById('auth-tab-login').classList.toggle('active', mode === 'login');
+  document.getElementById('auth-error').classList.remove('visible');
+
+  if (mode === 'register') {
+    document.getElementById('auth-title').textContent = 'Create your account';
+    document.getElementById('auth-subtitle').textContent = 'Analyse text, images, audio, video, and code';
+    document.getElementById('auth-field-name').style.display = '';
+    document.getElementById('auth-consent').style.display = '';
+    document.getElementById('auth-submit').textContent = 'Create Account';
+    document.getElementById('auth-switch').innerHTML = 'Already have an account? <button onclick="switchAuthTab(\'login\')">Log in</button>';
+    document.getElementById('auth-password').placeholder = 'Min 10 characters';
+    document.getElementById('auth-password').autocomplete = 'new-password';
+  } else {
+    document.getElementById('auth-title').textContent = 'Welcome back';
+    document.getElementById('auth-subtitle').textContent = 'Log in to continue your analysis';
+    document.getElementById('auth-field-name').style.display = 'none';
+    document.getElementById('auth-consent').style.display = 'none';
+    document.getElementById('auth-submit').textContent = 'Log In';
+    document.getElementById('auth-switch').innerHTML = 'Don\'t have an account? <button onclick="switchAuthTab(\'register\')">Register</button>';
+    document.getElementById('auth-password').placeholder = 'Your password';
+    document.getElementById('auth-password').autocomplete = 'current-password';
+  }
+}
+
+async function handleAuth(e) {
+  e.preventDefault();
+  var errEl = document.getElementById('auth-error');
+  var submitBtn = document.getElementById('auth-submit');
+  errEl.classList.remove('visible');
+
+  var email = document.getElementById('auth-email').value.trim();
+  var password = document.getElementById('auth-password').value;
+  var name = document.getElementById('auth-name').value.trim();
+  var consent = document.getElementById('auth-gdpr').checked;
+
+  // Client-side validation
+  if (!email) { showAuthError('Please enter your email.'); return; }
+  if (password.length < 10) { showAuthError('Password must be at least 10 characters.'); return; }
+
+  if (authMode === 'register') {
+    if (!consent) { showAuthError('Please agree to the Terms of Service and Privacy Policy.'); return; }
+    if (!/[A-Z]/.test(password)) { showAuthError('Password must contain at least one uppercase letter.'); return; }
+    if (!/[0-9]/.test(password)) { showAuthError('Password must contain at least one digit.'); return; }
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = authMode === 'register' ? 'Creating account...' : 'Logging in...';
+
+  try {
+    if (authMode === 'register') {
+      // Step 1: Register
+      var regRes = await fetch(CONFIG.BASE_URL + '/api/v1/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email,
+          password: password,
+          full_name: name || undefined,
+          consent_given: true,
+        }),
+      });
+      var regData;
+      try { regData = await regRes.json(); } catch(e) { throw new Error('Server error. Please try again.'); }
+      if (!regRes.ok) {
+        throw new Error(regData.detail || regData.message || 'Registration failed. Please try again.');
+      }
+      // Step 2: Auto-login after register
+      var loginRes = await fetch(CONFIG.BASE_URL + '/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, password: password }),
+      });
+      var loginData;
+      try { loginData = await loginRes.json(); } catch(e) { throw new Error('Account created! Please log in.'); }
+      if (!loginRes.ok) { throw new Error('Account created! Please log in.'); }
+
+      currentUser = regData;
+      accessToken = loginData.access_token;
+      if (loginData.refresh_token) localStorage.setItem('ag_refresh', loginData.refresh_token);
+
+    } else {
+      // Login
+      var res = await fetch(CONFIG.BASE_URL + '/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, password: password }),
+      });
+      var data;
+      try { data = await res.json(); } catch(e) { throw new Error('Server error. Please try again.'); }
+      if (!res.ok) {
+        if (res.status === 401) throw new Error('Invalid email or password.');
+        if (res.status === 403) throw new Error('Account is inactive. Please contact support.');
+        throw new Error(data.detail || data.message || 'Login failed.');
+      }
+
+      accessToken = data.access_token;
+      if (data.refresh_token) localStorage.setItem('ag_refresh', data.refresh_token);
+      currentUser = { email: email };
+    }
+
+    // Save session
+    localStorage.setItem('ag_user', JSON.stringify({ user: currentUser, accessToken: accessToken }));
+    updateAuthUI();
+    closeAuth();
+
+  } catch(err) {
+    var msg = err.message || 'An error occurred.';
+    if (msg === 'Failed to fetch' || msg.includes('NetworkError')) {
+      msg = 'Cannot reach the server. Please check your connection.';
+    }
+    showAuthError(msg);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = authMode === 'register' ? 'Create Account' : 'Log In';
+  }
+}
+
+function showAuthError(msg) {
+  var el = document.getElementById('auth-error');
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+
+function oauthLogin(provider) {
+  // OAuth redirect — will be configured when OAuth is set up on the backend
+  var oauthUrl = CONFIG.BASE_URL + '/api/v1/auth/' + provider;
+  window.location.href = oauthUrl;
+}
+
+function updateAuthUI() {
+  var authBtns = document.getElementById('nav-auth-buttons');
+  var userInfo = document.getElementById('nav-user-info');
+
+  if (currentUser && accessToken) {
+    authBtns.style.display = 'none';
+    userInfo.classList.add('active');
+    document.getElementById('nav-user-email').textContent = currentUser.email || currentUser.full_name || 'User';
+  } else {
+    authBtns.style.display = '';
+    userInfo.classList.remove('active');
+  }
+}
+
+function logoutUser() {
+  // Revoke refresh token if available
+  var refreshToken = localStorage.getItem('ag_refresh');
+  if (refreshToken) {
+    fetch(CONFIG.BASE_URL + '/api/v1/auth/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    }).catch(function() {});
+  }
+
+  currentUser = null;
+  accessToken = null;
+  localStorage.removeItem('ag_user');
+  localStorage.removeItem('ag_refresh');
+  updateAuthUI();
+}
+
+function isLoggedIn() {
+  return !!(currentUser && accessToken);
+}
+
+// Close modal on Escape
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && document.getElementById('auth-overlay').classList.contains('open')) {
+    closeAuth();
+  }
+});
+
+</script>
+</body>
+</html>

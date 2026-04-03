@@ -1,0 +1,70 @@
+# AuthentiGuard Production Caddyfile
+# Auto-HTTPS via Let's Encrypt, reverse proxy to backend + frontend
+
+# Main site — serves Next.js frontend
+authentiguard.io, www.authentiguard.io {
+	# API routes → FastAPI backend
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# Health check (no auth needed)
+	handle /health {
+		reverse_proxy backend:8000
+	}
+
+	# Everything else → Next.js frontend
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	# Security headers (Caddy adds HSTS automatically with auto-HTTPS)
+	header {
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+
+	# Gzip compression
+	encode gzip zstd
+
+	# Logging
+	log {
+		output file /data/access.log {
+			roll_size 100mb
+			roll_keep 5
+		}
+	}
+}
+
+# API subdomain — direct to FastAPI
+api.authentiguard.io {
+	reverse_proxy backend:8000
+
+	header {
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+	}
+
+	encode gzip zstd
+
+	log {
+		output file /data/api-access.log {
+			roll_size 100mb
+			roll_keep 5
+		}
+	}
+}
+
+# Flower dashboard — protected behind auth, internal access only
+# Access via: https://flower.authentiguard.io
+flower.authentiguard.io {
+	basicauth {
+		# Replace with hashed password: caddy hash-password
+		admin {$FLOWER_PASSWORD_HASH}
+	}
+
+	reverse_proxy flower:5555
+}
