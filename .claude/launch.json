@@ -1,119 +1,35 @@
 {
-  "servers": [
+  "version": "0.0.1",
+  "configurations": [
     {
-      "name": "PostgreSQL 16",
-      "type": "database",
-      "service": "postgres",
-      "command": "docker compose up postgres",
-      "port": 5432,
-      "healthCheck": "pg_isready -U authentiguard",
-      "env": {
-        "POSTGRES_USER": "authentiguard",
-        "POSTGRES_DB": "authentiguard"
-      },
-      "notes": "Primary database. Must start before backend, worker, and mlflow."
-    },
-    {
-      "name": "Redis 7",
-      "type": "cache",
-      "service": "redis",
-      "command": "docker compose up redis",
-      "port": 6379,
-      "healthCheck": "redis-cli ping",
-      "notes": "Session store, rate limiting, Celery broker + result backend."
-    },
-    {
-      "name": "MinIO (S3-compatible)",
-      "type": "storage",
-      "service": "minio",
-      "command": "docker compose up minio",
-      "ports": {
-        "api": 9000,
-        "console": 9001
-      },
-      "healthCheck": "curl -f http://localhost:9000/minio/health/live",
-      "env": {
-        "MINIO_ROOT_USER": "minioadmin"
-      },
-      "notes": "Object storage for uploads, reports, ML artifacts. Console at :9001."
+      "name": "Next.js Frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
     },
     {
       "name": "FastAPI Backend",
-      "type": "api",
-      "service": "backend",
-      "command": "docker compose up backend",
-      "commandLocal": "cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
-      "port": 8000,
-      "docsUrl": "http://localhost:8000/docs",
-      "depends": ["postgres", "redis", "minio"],
-      "notes": "Main API server. Swagger UI at /docs in dev mode."
+      "runtimeExecutable": "uvicorn",
+      "runtimeArgs": ["app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"],
+      "port": 8000
     },
     {
-      "name": "Celery Worker (AI Detection)",
-      "type": "worker",
-      "service": "worker",
-      "command": "docker compose up worker",
-      "commandLocal": "cd backend && celery -A app.workers.celery_app worker --loglevel=info -Q text,image,audio,video,code,webhooks",
-      "depends": ["postgres", "redis"],
-      "notes": "Processes all detection jobs. GPU optional (NVIDIA)."
+      "name": "Celery Worker",
+      "runtimeExecutable": "celery",
+      "runtimeArgs": ["-A", "app.workers.celery_app", "worker", "--loglevel=info", "-Q", "text,image,audio,video,code,webhook"],
+      "port": null
     },
     {
-      "name": "Celery Flower (Queue Monitor)",
-      "type": "monitor",
-      "service": "flower",
-      "command": "docker compose up flower",
-      "commandLocal": "celery -A app.workers.celery_app flower --port=5555",
-      "port": 5555,
-      "url": "http://localhost:5555",
-      "depends": ["redis"],
-      "notes": "Celery task monitoring dashboard. Basic auth required."
-    },
-    {
-      "name": "Next.js Frontend",
-      "type": "frontend",
-      "service": "frontend",
-      "command": "docker compose up frontend",
-      "commandLocal": "cd frontend && npm run dev",
-      "port": 3000,
-      "url": "http://localhost:3000",
-      "depends": ["backend"],
-      "env": {
-        "NEXT_PUBLIC_API_URL": "http://localhost:8000"
-      },
-      "notes": "Next.js 14 dev server with hot reload."
+      "name": "Celery Flower",
+      "runtimeExecutable": "celery",
+      "runtimeArgs": ["-A", "app.workers.celery_app", "flower", "--port=5555"],
+      "port": 5555
     },
     {
       "name": "MLflow Tracking",
-      "type": "ml-ops",
-      "service": "mlflow",
-      "command": "docker compose up mlflow",
-      "commandLocal": "mlflow server --backend-store-uri postgresql://authentiguard:pass@localhost:5432/mlflow --default-artifact-root s3://mlflow-artifacts --host 0.0.0.0 --port 5000",
-      "port": 5000,
-      "url": "http://localhost:5000",
-      "depends": ["postgres", "minio"],
-      "notes": "ML experiment tracking. Artifacts stored in MinIO."
+      "runtimeExecutable": "mlflow",
+      "runtimeArgs": ["server", "--backend-store-uri", "postgresql://authentiguard:pass@localhost:5432/mlflow", "--default-artifact-root", "s3://mlflow-artifacts", "--host", "0.0.0.0", "--port", "5000"],
+      "port": 5000
     }
-  ],
-  "profiles": {
-    "full": {
-      "description": "All 8 services (full stack)",
-      "command": "docker compose up",
-      "services": ["postgres", "redis", "minio", "backend", "worker", "flower", "frontend", "mlflow"]
-    },
-    "backend-only": {
-      "description": "API + dependencies (no frontend/ML tooling)",
-      "command": "docker compose up postgres redis minio backend worker",
-      "services": ["postgres", "redis", "minio", "backend", "worker"]
-    },
-    "frontend-dev": {
-      "description": "Frontend + API (local Next.js, Docker backend)",
-      "command": "docker compose up postgres redis minio backend worker && cd frontend && npm run dev",
-      "services": ["postgres", "redis", "minio", "backend", "worker", "frontend"]
-    },
-    "infra-only": {
-      "description": "Just databases and storage (for local dev)",
-      "command": "docker compose up postgres redis minio",
-      "services": ["postgres", "redis", "minio"]
-    }
-  }
+  ]
 }
