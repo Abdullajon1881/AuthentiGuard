@@ -170,20 +170,23 @@ export const analysis = {
     return apiFetch(`/jobs/${jobId}/result`)
   },
 
-  /** Poll until completed or failed. Resolves with the final result. */
+  /** Poll until completed or failed. Uses exponential backoff to reduce server load. */
   async pollUntilDone(
     jobId: string,
     onProgress?: (status: string) => void,
-    intervalMs = 1500,
-    maxWaitMs = 120_000,
+    initialIntervalMs = 2000,
+    maxWaitMs = 300_000,
   ): Promise<DetectionResult> {
     const deadline = Date.now() + maxWaitMs
+    let interval = initialIntervalMs
+    const maxInterval = 10_000 // Cap at 10 seconds between polls
     while (Date.now() < deadline) {
       const job = await this.getStatus(jobId)
       onProgress?.(job.status)
       if (job.status === 'completed') return this.getResult(jobId)
       if (job.status === 'failed') throw new Error('Detection job failed')
-      await new Promise(r => setTimeout(r, intervalMs))
+      await new Promise(r => setTimeout(r, interval))
+      interval = Math.min(interval * 1.5, maxInterval) // Exponential backoff
     }
     throw new Error('Detection timed out')
   },

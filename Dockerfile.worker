@@ -61,4 +61,6 @@ HEALTHCHECK --interval=60s --timeout=30s --start-period=60s --retries=3 \
     CMD celery -A app.workers.celery_app inspect ping --timeout 10 || exit 1
 
 # MVP: Only text + webhook queues. Add image,audio,video when those detectors are trained.
-CMD ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "-Q", "text,webhook", "--concurrency=2"]
+# Concurrency configurable via CELERY_CONCURRENCY env var (default: 4)
+ENV CELERY_CONCURRENCY=4
+CMD celery -A app.workers.celery_app worker --loglevel=info -Q text,webhook --concurrency=$CELERY_CONCURRENCY

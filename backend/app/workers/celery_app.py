@@ -29,6 +29,7 @@ celery_app = Celery(
         "app.workers.audio_worker",
         "app.workers.video_worker",
         "app.workers.webhook_worker",
+        "app.workers.cleanup",
     ],
 )
 
@@ -85,4 +86,14 @@ TIER_TO_PRIORITY = {
     "free":       1,
     "pro":        5,
     "enterprise": 9,
+}
+
+
+# ── Periodic tasks ────────────────────────────────────────────
+
+celery_app.conf.beat_schedule = {
+    "cleanup-stuck-jobs": {
+        "task": "app.workers.cleanup.cleanup_stuck_jobs",
+        "schedule": 300.0,  # every 5 minutes
+    },
 }

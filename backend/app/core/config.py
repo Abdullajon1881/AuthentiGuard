@@ -28,8 +28,8 @@ class Settings(BaseSettings):
 
     # ── Database ───────────────────────────────────────────────
     DATABASE_URL: str   # postgresql+asyncpg://...
-    DB_POOL_SIZE: int   = 10
-    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_SIZE: int   = 20
+    DB_MAX_OVERFLOW: int = 40
 
     # ── Redis ──────────────────────────────────────────────────
     REDIS_URL: str       # redis://:pass@host:port/db
