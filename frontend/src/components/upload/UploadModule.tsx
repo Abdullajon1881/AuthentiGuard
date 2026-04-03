@@ -1,10 +1,10 @@
 'use client'
 
 import React, { useCallback, useRef, useState } from 'react'
+import { Upload, X, FileText, Loader2 } from 'lucide-react'
 import { analysis } from '@/lib/api'
+import { cn } from '@/lib/cn'
 import type { AnalysisJob, ContentType } from '@/types'
-
-// ── Types ─────────────────────────────────────────────────────
 
 type InputMode = 'text' | 'file' | 'url' | 'code'
 
@@ -16,32 +16,7 @@ interface Props {
 const ACCEPT = '.txt,.md,.pdf,.docx,.mp3,.wav,.flac,.mp4,.mov,.jpg,.jpeg,.png,.webp,.py,.js,.ts,.java,.go,.cpp,.c,.rs'
 const MAX_BYTES = 500 * 1024 * 1024
 
-// ── Mode tab ──────────────────────────────────────────────────
-
-function ModeTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: '7px 16px',
-        fontSize: 12,
-        fontFamily: 'var(--font-mono)',
-        fontWeight: 500,
-        letterSpacing: '0.06em',
-        borderRadius: 'var(--radius)',
-        border: active ? '1px solid var(--teal)' : '1px solid var(--border-2)',
-        background: active ? 'var(--teal-dim)' : 'transparent',
-        color: active ? 'var(--teal)' : 'var(--text-3)',
-        cursor: 'pointer',
-        transition: 'all 0.15s',
-      }}
-    >
-      {label}
-    </button>
-  )
-}
-
-// ── Drop zone ─────────────────────────────────────────────────
+/* ── Drop zone ─────────────────────────────────────────────── */
 
 function DropZone({ onFile }: { onFile: (f: File) => void }) {
   const [dragging, setDragging] = useState(false)
@@ -64,43 +39,33 @@ function DropZone({ onFile }: { onFile: (f: File) => void }) {
       tabIndex={0}
       aria-label="Upload file for analysis"
       onKeyDown={e => e.key === 'Enter' && inputRef.current?.click()}
-      style={{
-        border: `1.5px dashed ${dragging ? 'var(--teal)' : 'var(--border-2)'}`,
-        borderRadius: 'var(--radius-lg)',
-        padding: '48px 24px',
-        textAlign: 'center',
-        cursor: 'pointer',
-        background: dragging ? 'var(--teal-dim2)' : 'transparent',
-        transition: 'all 0.2s',
-      }}
+      className={cn(
+        'border border-dashed rounded-lg py-12 px-6 text-center cursor-pointer transition-all duration-200',
+        dragging
+          ? 'border-accent bg-accent-dim'
+          : 'border-edge-2 hover:border-edge-3',
+      )}
     >
       <input
         ref={inputRef}
         type="file"
         accept={ACCEPT}
-        style={{ display: 'none' }}
+        className="hidden"
         onChange={e => e.target.files?.[0] && onFile(e.target.files[0])}
         aria-hidden
       />
-      {/* Upload icon */}
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)"
-        strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-        style={{ margin: '0 auto 12px' }}>
-        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-        <polyline points="17 8 12 3 7 8"/>
-        <line x1="12" y1="3" x2="12" y2="15"/>
-      </svg>
-      <p style={{ color: 'var(--text-2)', fontSize: 14, marginBottom: 4 }}>
+      <Upload size={28} strokeWidth={1.5} className="mx-auto mb-3 text-fg-3" />
+      <p className="text-fg-2 text-sm mb-1">
         Drop a file here, or click to browse
       </p>
-      <p style={{ color: 'var(--text-3)', fontSize: 12 }}>
+      <p className="text-fg-3 text-xs">
         Text, PDF, DOCX, Images, Audio, Video, Code — up to 500 MB
       </p>
     </div>
   )
 }
 
-// ── Main Upload Module ────────────────────────────────────────
+/* ── Main Upload Module ────────────────────────────────────── */
 
 export default function UploadModule({ onJobCreated, onError }: Props) {
   const [mode, setMode]       = useState<InputMode>('text')
@@ -113,7 +78,7 @@ export default function UploadModule({ onJobCreated, onError }: Props) {
   async function handleSubmit() {
     if (loading) return
     setLoading(true)
-    setStage('Submitting…')
+    setStage('Submitting\u2026')
 
     try {
       let job: AnalysisJob
@@ -124,18 +89,18 @@ export default function UploadModule({ onJobCreated, onError }: Props) {
           onError('Please enter at least 20 characters of text.')
           return
         }
-        setStage('Queuing analysis…')
+        setStage('Queuing analysis\u2026')
         job = await analysis.submitText(content, mode === 'code' ? 'code' : 'text')
 
       } else if (mode === 'file') {
         if (!file) { onError('Please select a file.'); return }
         if (file.size > MAX_BYTES) { onError('File exceeds 500 MB limit.'); return }
-        setStage(`Uploading ${file.name}…`)
+        setStage(`Uploading ${file.name}\u2026`)
         job = await analysis.submitFile(file)
 
       } else if (mode === 'url') {
         if (!url.trim()) { onError('Please enter a URL.'); return }
-        setStage('Fetching and analyzing URL…')
+        setStage('Fetching and analyzing URL\u2026')
         job = await analysis.submitUrl(url.trim())
       } else {
         onError('Unknown input mode.')
@@ -152,11 +117,19 @@ export default function UploadModule({ onJobCreated, onError }: Props) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="flex flex-col gap-5">
       {/* Mode tabs */}
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div className="segment-control">
         {(['text', 'file', 'code', 'url'] as InputMode[]).map(m => (
-          <ModeTab key={m} label={m.toUpperCase()} active={mode === m} onClick={() => setMode(m)} />
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            className={cn(
+              mode === m ? 'segment-btn-active' : 'segment-btn',
+            )}
+          >
+            {m}
+          </button>
         ))}
       </div>
 
@@ -166,25 +139,17 @@ export default function UploadModule({ onJobCreated, onError }: Props) {
           value={text}
           onChange={e => setText(e.target.value)}
           placeholder={mode === 'code'
-            ? '// Paste code here…'
-            : 'Paste or type text to analyze…'}
+            ? '// Paste code here\u2026'
+            : 'Paste or type text to analyze\u2026'}
           rows={10}
           aria-label={mode === 'code' ? 'Code input' : 'Text input'}
-          style={{
-            width: '100%',
-            background: 'var(--bg-3)',
-            border: '1px solid var(--border-2)',
-            borderRadius: 'var(--radius-lg)',
-            color: 'var(--text)',
-            fontFamily: mode === 'code' ? 'var(--font-mono)' : 'var(--font-sans)',
-            fontSize: mode === 'code' ? 13 : 14,
-            lineHeight: 1.65,
-            padding: '14px 16px',
-            resize: 'vertical',
-            outline: 'none',
-          }}
-          onFocus={e => (e.target.style.borderColor = 'var(--teal)')}
-          onBlur={e => (e.target.style.borderColor = 'var(--border-2)')}
+          className={cn(
+            'w-full bg-surface-3 border border-edge-2 rounded-lg text-fg leading-relaxed',
+            'px-4 py-3.5 resize-y outline-none',
+            'focus:border-accent transition-colors duration-150',
+            'placeholder:text-fg-3',
+            mode === 'code' ? 'font-mono text-[13px]' : 'font-sans text-sm',
+          )}
         />
       )}
 
@@ -192,50 +157,40 @@ export default function UploadModule({ onJobCreated, onError }: Props) {
         <div>
           <DropZone onFile={f => setFile(f)} />
           {file && (
-            <div style={{
-              marginTop: 10,
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '10px 14px',
-              background: 'var(--teal-dim2)',
-              border: '1px solid var(--teal-dim)',
-              borderRadius: 'var(--radius)',
-            }}>
-              <span style={{ color: 'var(--teal)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>
+            <div className="mt-3 flex items-center gap-3 px-3.5 py-2.5 border border-edge-2 rounded">
+              <FileText size={14} className="text-accent shrink-0" />
+              <span className="font-mono text-xs text-accent truncate">
                 {file.name}
               </span>
-              <span style={{ color: 'var(--text-3)', fontSize: 11, marginLeft: 'auto' }}>
+              <span className="font-mono text-[11px] text-fg-3 ml-auto shrink-0">
                 {(file.size / 1024 / 1024).toFixed(2)} MB
               </span>
               <button
                 onClick={() => setFile(null)}
                 aria-label="Remove file"
-                style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
-              >×</button>
+                className="btn-ghost p-0.5"
+              >
+                <X size={14} />
+              </button>
             </div>
           )}
         </div>
       )}
 
       {mode === 'url' && (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input
-            type="url"
-            value={url}
-            onChange={e => setUrl(e.target.value)}
-            placeholder="https://example.com/article"
-            aria-label="URL input"
-            style={{
-              flex: 1,
-              background: 'var(--bg-3)',
-              border: '1px solid var(--border-2)',
-              borderRadius: 'var(--radius)',
-              color: 'var(--text)',
-              fontSize: 14,
-              padding: '10px 14px',
-              outline: 'none',
-            }}
-          />
-        </div>
+        <input
+          type="url"
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          placeholder="https://example.com/article"
+          aria-label="URL input"
+          className={cn(
+            'w-full bg-surface-3 border border-edge-2 rounded text-fg text-sm',
+            'px-4 py-2.5 outline-none',
+            'focus:border-accent transition-colors duration-150',
+            'placeholder:text-fg-3',
+          )}
+        />
       )}
 
       {/* Submit */}
@@ -243,36 +198,18 @@ export default function UploadModule({ onJobCreated, onError }: Props) {
         onClick={handleSubmit}
         disabled={loading}
         aria-busy={loading}
-        style={{
-          padding: '12px 24px',
-          background: loading ? 'var(--teal-dim)' : 'var(--teal)',
-          color: loading ? 'var(--teal)' : '#000',
-          border: 'none',
-          borderRadius: 'var(--radius)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 13,
-          fontWeight: 500,
-          letterSpacing: '0.06em',
-          cursor: loading ? 'not-allowed' : 'pointer',
-          transition: 'all 0.15s',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-        }}
+        className={cn(
+          'btn-primary py-3',
+          loading && 'opacity-70 cursor-not-allowed',
+        )}
       >
         {loading ? (
           <>
-            <span className="pulse-dot" style={{
-              width: 8, height: 8,
-              background: 'var(--teal)',
-              borderRadius: '50%',
-              display: 'inline-block',
-            }} />
-            {stage || 'Analyzing…'}
+            <Loader2 size={14} className="animate-spin" />
+            {stage || 'Analyzing\u2026'}
           </>
         ) : (
-          'Analyze →'
+          'Analyze \u2192'
         )}
       </button>
     </div>

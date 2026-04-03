@@ -5,6 +5,7 @@ All middleware, routers, and startup/shutdown hooks are registered here.
 
 from __future__ import annotations
 
+import uuid
 from contextlib import asynccontextmanager
 
 import structlog
@@ -55,9 +56,69 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "X-Request-ID"],
     )
+
+    # ── Correlation ID ────────────────────────────────────────
+    @app.middleware("http")
+    async def correlation_id_middleware(request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+        request.state.request_id = request_id
+        structlog.contextvars.bind_contextvars(request_id=request_id)
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        structlog.contextvars.unbind_contextvars("request_id")
+        return response
+
+    # ── Security headers ────────────────────────────────────────
+    @app.middleware("http")
+    async def add_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if settings.is_production:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=63072000; includeSubDomains; preload"
+            )
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: https:; "
+                "font-src 'self'; "
+                "connect-src 'self'"
+            )
+        return response
+
+    # ── Lightweight auth extraction (populates request.state.user for rate limiter) ──
+    @app.middleware("http")
+    async def extract_user_from_jwt(request: Request, call_next):
+        """
+        Best-effort JWT decode to populate request.state.user before
+        the rate limiter runs. Does NOT enforce auth — that's deps.py's job.
+        """
+        request.state.user = None
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            try:
+                from .core.security import decode_access_token
+                payload = decode_access_token(auth_header[7:])
+
+                class _TokenUser:
+                    """Minimal user-like object for rate limiting."""
+                    __slots__ = ("id", "tier")
+                    def __init__(self, uid: str, tier: str):
+                        self.id = uid
+                        self.tier = tier
+
+                request.state.user = _TokenUser(payload["sub"], payload.get("tier", "free"))
+            except Exception:
+                pass  # Invalid/expired token — fall through to anonymous rate limiting
+        return await call_next(request)
 
     # ── Rate limiting + audit logging ─────────────────────────
     app.add_middleware(AuditLogMiddleware)

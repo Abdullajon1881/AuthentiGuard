@@ -6,9 +6,9 @@ Pydantic Settings validates types and raises on startup if required vars are mis
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import AnyHttpUrl, Field, field_validator
+from pydantic import AnyHttpUrl, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -76,12 +76,36 @@ class Settings(BaseSettings):
     # ── CORS ──────────────────────────────────────────────────
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> list[str]:
+        """Parse comma-separated CORS origins from env var string."""
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
+
     @field_validator("DATABASE_URL")
     @classmethod
     def validate_db_url(cls, v: str) -> str:
         if not v.startswith("postgresql"):
             raise ValueError("DATABASE_URL must be a PostgreSQL connection string")
         return v
+
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def validate_jwt_strength(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("JWT_SECRET_KEY must be at least 32 characters for HS256 security")
+        return v
+
+    @model_validator(mode="after")
+    def validate_rate_limit_ordering(self) -> "Settings":
+        if not (self.RATE_LIMIT_FREE_TIER <= self.RATE_LIMIT_PRO_TIER <= self.RATE_LIMIT_ENTERPRISE_TIER):
+            raise ValueError(
+                "Rate limits must be ordered: free <= pro <= enterprise "
+                f"(got {self.RATE_LIMIT_FREE_TIER}, {self.RATE_LIMIT_PRO_TIER}, {self.RATE_LIMIT_ENTERPRISE_TIER})"
+            )
+        return self
 
     @property
     def max_upload_bytes(self) -> int:

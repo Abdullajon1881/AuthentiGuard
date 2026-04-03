@@ -59,27 +59,59 @@ class TextDetector:
     ) -> None:
         self._layer1 = PerplexityLayer(device=device)
         self._layer2 = StylometryLayer(use_spacy=True)
-        self._layer3 = TransformerLayer(checkpoint_path=transformer_checkpoint, device=device)
-        self._layer4 = AdversarialLayer(checkpoint_path=adversarial_checkpoint, device=device)
+        self._transformer_checkpoint = transformer_checkpoint
+        self._adversarial_checkpoint = adversarial_checkpoint
+        self._layer3: TransformerLayer | None = None
+        self._layer4: AdversarialLayer | None = None
         self._meta   = MetaClassifier()
         self._meta_checkpoint = meta_checkpoint
         self._loaded = False
+        self._active_layers: list[int] = []  # indices of active layers
+        self._device = device
 
     def load_models(self) -> None:
         """Load all model weights. Call once at startup."""
         log.info("loading_text_detector_models")
+
+        # L1 (perplexity) and L2 (stylometry) always load — no training needed
         self._layer1.load_model()
         self._layer2.load_model()
-        self._layer3.load_model()
-        self._layer4.load_model()
+        self._active_layers = [0, 1]
+
+        # L3 (transformer) — only load if fine-tuned checkpoint exists
+        if self._transformer_checkpoint and self._transformer_checkpoint.exists():
+            self._layer3 = TransformerLayer(
+                checkpoint_path=self._transformer_checkpoint, device=self._device
+            )
+            self._layer3.load_model()
+            self._active_layers.append(2)
+            log.info("layer3_transformer_loaded")
+        else:
+            log.warning("layer3_skipped — no fine-tuned checkpoint, would produce random output")
+
+        # L4 (adversarial) — only load if fine-tuned checkpoint exists
+        if self._adversarial_checkpoint and self._adversarial_checkpoint.exists():
+            self._layer4 = AdversarialLayer(
+                checkpoint_path=self._adversarial_checkpoint, device=self._device
+            )
+            self._layer4.load_model()
+            self._active_layers.append(3)
+            log.info("layer4_adversarial_loaded")
+        else:
+            log.warning("layer4_skipped — no fine-tuned checkpoint, would produce random output")
 
         if self._meta_checkpoint and self._meta_checkpoint.exists():
             self._meta = MetaClassifier.load(self._meta_checkpoint)
         else:
             log.warning("meta_classifier_checkpoint_not_found — using heuristic fallback")
 
+        active_count = len(self._active_layers)
+        log.info("text_detector_ready", active_layers=active_count,
+                 layers=self._active_layers)
+        if active_count < 4:
+            log.info("running_in_mvp_mode — L1+L2 only. Fine-tune L3/L4 for full accuracy.")
+
         self._loaded = True
-        log.info("text_detector_ready")
 
     def analyze(self, text: str) -> EnsembleResult:
         """
@@ -96,13 +128,16 @@ class TextDetector:
         if not self._loaded:
             raise RuntimeError("Call load_models() first.")
 
-        # ── Run all four layers (safe — errors return neutral 0.5) ──
+        # ── Run active layers (safe — errors return neutral 0.5) ──
         layer_results: list[LayerResult] = [
             self._layer1.analyze_safe(text),
             self._layer2.analyze_safe(text),
-            self._layer3.analyze_safe(text),
-            self._layer4.analyze_safe(text),
         ]
+        # Only run L3/L4 if they have fine-tuned checkpoints loaded
+        if self._layer3 is not None:
+            layer_results.append(self._layer3.analyze_safe(text))
+        if self._layer4 is not None:
+            layer_results.append(self._layer4.analyze_safe(text))
 
         # ── Build feature vector ────────────────────────────────
         feature_vector = build_feature_vector(layer_results, text)
@@ -111,9 +146,18 @@ class TextDetector:
         if self._meta._is_fitted:
             score = self._meta.predict(feature_vector)
         else:
-            # Fallback: weighted average when meta not trained yet
+            # Fallback: weighted average based on active layers
+            #   2 layers (L1+L2 MVP):    50/50 perplexity + stylometry
+            #   3 layers (L1+L2+L3):     25/25/50
+            #   4 layers (full ensemble): 20/20/35/25
+            active_count = len(layer_results)
+            if active_count == 2:
+                weights = [0.50, 0.50]
+            elif active_count == 3:
+                weights = [0.25, 0.25, 0.50]
+            else:
+                weights = [0.20, 0.20, 0.35, 0.25]
             scores = [r.score for r in layer_results]
-            weights = [0.20, 0.20, 0.35, 0.25]  # L1, L2, L3, L4
             score = sum(s * w for s, w in zip(scores, weights))
             score = max(0.01, min(0.99, score))
 
@@ -121,14 +165,13 @@ class TextDetector:
         confidence = _score_to_confidence(score)
 
         # ── Evidence summary for the UI ─────────────────────────
-        l1 = layer_results[0]
-        l2 = layer_results[1]
+        by_name = {r.layer_name: r for r in layer_results}
         evidence_summary: dict[str, Any] = {
             "layer_scores": {
-                "perplexity":   l1.score,
-                "stylometry":   layer_results[1].score,
-                "transformer":  layer_results[2].score,
-                "adversarial":  layer_results[3].score,
+                "perplexity":   by_name.get("perplexity", LayerResult("perplexity", 0.5)).score,
+                "stylometry":   by_name.get("stylometry", LayerResult("stylometry", 0.5)).score,
+                "transformer":  by_name.get("transformer", LayerResult("transformer", 0.5)).score if "transformer" in by_name else None,
+                "adversarial":  by_name.get("adversarial", LayerResult("adversarial", 0.5)).score if "adversarial" in by_name else None,
             },
             "layer_errors": {
                 r.layer_name: r.error

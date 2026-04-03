@@ -1,17 +1,13 @@
 'use client'
 
-// Step 40: Evidence Panel for text results.
-// Shows per-sentence AI probability as inline background highlights,
-// with a sidebar showing confidence indicators and top signals.
-
 import { useState } from 'react'
+import { cn } from '@/lib/cn'
 import type { EvidenceSignal, SentenceScore } from '@/types'
 
-// Colour-maps a [0,1] AI score to a CSS colour for sentence highlighting
 function scoreToColor(score: number): string {
-  if (score >= 0.80) return 'rgba(248, 113, 113, 0.22)'   // red   — very likely AI
-  if (score >= 0.65) return 'rgba(251, 191,  36, 0.18)'   // amber — probably AI
-  if (score >= 0.50) return 'rgba(251, 191,  36, 0.08)'   // faint amber — uncertain
+  if (score >= 0.80) return 'rgba(196, 75, 55, 0.18)'
+  if (score >= 0.65) return 'rgba(196,154, 47, 0.14)'
+  if (score >= 0.50) return 'rgba(196,154, 47, 0.06)'
   return 'transparent'
 }
 
@@ -48,37 +44,27 @@ export default function EvidencePanel({ sentenceScores, topSignals, overallScore
   const hasSignals   = topSignals.length > 0
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="flex flex-col gap-5">
 
-      {/* ── Top signals ─────────────────────────────────────── */}
+      {/* Top signals */}
       {hasSignals && (
         <section aria-label="Detection signals">
-          <h3 style={{ fontSize: 11, fontFamily: 'var(--font-mono)', letterSpacing: '0.10em',
-            textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 10 }}>
-            Key signals
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <h3 className="section-label mb-3">Key signals</h3>
+          <div className="flex flex-col gap-1.5">
             {topSignals.map((sig, i) => (
-              <div key={i} style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 12px',
-                background: 'var(--bg-3)',
-                borderRadius: 'var(--radius)',
-                border: '1px solid var(--border)',
-              }}>
-                <span style={{
-                  width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                  background: WEIGHT_COLOR[sig.weight] ?? 'var(--text-3)',
-                }} />
-                <span style={{ fontSize: 13, color: 'var(--text-2)', flex: 1 }}>
-                  {sig.signal}
-                </span>
-                <span style={{
-                  fontFamily: 'var(--font-mono)', fontSize: 11,
-                  color: WEIGHT_COLOR[sig.weight] ?? 'var(--text-3)',
-                  background: 'var(--bg-4)',
-                  padding: '2px 6px', borderRadius: 3,
-                }}>
+              <div
+                key={i}
+                className="flex items-center gap-3 py-2 px-3 border-b border-edge last:border-0"
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ background: WEIGHT_COLOR[sig.weight] ?? 'var(--text-3)' }}
+                />
+                <span className="text-sm text-fg-2 flex-1">{sig.signal}</span>
+                <span
+                  className="font-mono text-[11px] px-2 py-0.5 rounded bg-surface-4"
+                  style={{ color: WEIGHT_COLOR[sig.weight] ?? 'var(--text-3)' }}
+                >
                   {sig.value}
                 </span>
               </div>
@@ -87,44 +73,35 @@ export default function EvidencePanel({ sentenceScores, topSignals, overallScore
         </section>
       )}
 
-      {/* ── Per-sentence highlight ───────────────────────────── */}
+      {/* Per-sentence highlight */}
       {hasSentences && (
         <section aria-label="Per-sentence analysis">
-          <h3 style={{ fontSize: 11, fontFamily: 'var(--font-mono)', letterSpacing: '0.10em',
-            textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 10 }}>
-            Sentence breakdown
-          </h3>
+          <h3 className="section-label mb-3">Sentence breakdown</h3>
 
           {/* Legend */}
-          <div style={{ display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-4">
             {[
-              { color: 'rgba(248,113,113,0.22)', label: 'AI (≥80%)' },
-              { color: 'rgba(251,191,36,0.18)',  label: 'Likely AI (65–80%)' },
-              { color: 'rgba(251,191,36,0.08)',  label: 'Uncertain (50–65%)' },
-              { color: 'transparent',            label: 'Human (<50%)', border: true },
+              { color: 'rgba(196,75,55,0.18)',  label: 'AI (\u226580%)' },
+              { color: 'rgba(196,154,47,0.14)', label: 'Likely AI (65\u201380%)' },
+              { color: 'rgba(196,154,47,0.06)', label: 'Uncertain (50\u201365%)' },
+              { color: 'transparent',           label: 'Human (<50%)', border: true },
             ].map(({ color, label, border }) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{
-                  width: 12, height: 12, borderRadius: 3,
-                  background: color,
-                  border: border ? '1px solid var(--border-2)' : 'none',
-                }} />
-                <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{label}</span>
+              <div key={label} className="flex items-center gap-1.5">
+                <div
+                  className="w-3 h-3 rounded-sm"
+                  style={{
+                    background: color,
+                    border: border ? '1px solid var(--border-2)' : 'none',
+                  }}
+                />
+                <span className="text-[11px] text-fg-3">{label}</span>
               </div>
             ))}
           </div>
 
           {/* Sentences */}
           <div
-            style={{
-              lineHeight: 1.85,
-              fontSize: 14,
-              color: 'var(--text-2)',
-              padding: '16px',
-              background: 'var(--bg-3)',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--border)',
-            }}
+            className="leading-[1.85] text-sm text-fg-2 p-4 bg-surface-3 rounded-lg border border-edge"
             role="list"
             aria-label="Sentences with AI probability scores"
           >
@@ -135,17 +112,12 @@ export default function EvidencePanel({ sentenceScores, topSignals, overallScore
                 aria-label={`Sentence ${i + 1}: ${scoreToLabel(s.score)} (${Math.round(s.score * 100)}%)`}
                 onMouseEnter={() => setHoveredIdx(i)}
                 onMouseLeave={() => setHoveredIdx(null)}
-                title={`${scoreToLabel(s.score)} — ${Math.round(s.score * 100)}% AI`}
+                title={`${scoreToLabel(s.score)} \u2014 ${Math.round(s.score * 100)}% AI`}
+                className="inline rounded-sm px-0.5 cursor-default transition-all duration-200"
                 style={{
-                  display: 'inline',
                   background: scoreToColor(s.score),
-                  borderRadius: 3,
-                  padding: '1px 2px',
-                  cursor: 'default',
-                  transition: 'background 0.2s',
                   outline: hoveredIdx === i ? `1px solid ${scoreToTextColor(s.score)}` : 'none',
                   outlineOffset: 1,
-                  position: 'relative',
                 }}
               >
                 {s.text}{' '}
@@ -155,25 +127,14 @@ export default function EvidencePanel({ sentenceScores, topSignals, overallScore
 
           {/* Hovered sentence tooltip */}
           {hoveredIdx !== null && sentenceScores[hoveredIdx] && (
-            <div style={{
-              marginTop: 10,
-              padding: '8px 14px',
-              background: 'var(--bg-4)',
-              borderRadius: 'var(--radius)',
-              border: '1px solid var(--border-2)',
-              fontSize: 12,
-              display: 'flex', alignItems: 'center', gap: 12,
-            }}>
-              <span style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+            <div className="mt-2.5 py-2 px-3.5 bg-surface-4 rounded border border-edge-2 text-xs flex items-center gap-3">
+              <span className="text-fg-3 font-mono">
                 sentence {hoveredIdx + 1}
               </span>
-              <span style={{
-                color: scoreToTextColor(sentenceScores[hoveredIdx].score),
-                fontWeight: 500,
-              }}>
+              <span className="font-medium" style={{ color: scoreToTextColor(sentenceScores[hoveredIdx].score) }}>
                 {scoreToLabel(sentenceScores[hoveredIdx].score)}
               </span>
-              <span style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>
+              <span className="text-fg-3 font-mono ml-auto">
                 {Math.round(sentenceScores[hoveredIdx].score * 100)}% AI probability
               </span>
             </div>
@@ -182,7 +143,7 @@ export default function EvidencePanel({ sentenceScores, topSignals, overallScore
       )}
 
       {!hasSentences && !hasSignals && (
-        <p style={{ color: 'var(--text-3)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+        <p className="text-fg-3 text-sm text-center py-6">
           No sentence-level evidence available for this content type.
         </p>
       )}

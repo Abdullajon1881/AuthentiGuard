@@ -44,10 +44,11 @@ def create_access_token(
     user_id: str,
     role: str,
     email: str,
+    tier: str = "free",
 ) -> str:
     """
     Create a short-lived JWT access token.
-    Payload: sub (user_id), role, email, exp, iat, jti (unique ID).
+    Payload: sub (user_id), role, email, tier, exp, iat, jti (unique ID).
     """
     settings = get_settings()
     now = datetime.now(timezone.utc)
@@ -57,6 +58,7 @@ def create_access_token(
         "sub":   user_id,
         "role":  role,
         "email": email,
+        "tier":  tier,
         "exp":   expire,
         "iat":   now,
         "jti":   str(uuid.uuid4()),
@@ -164,3 +166,28 @@ async def revoke_all_refresh_tokens(user_id: str) -> int:
             break
 
     return revoked
+
+
+# ── Password reset ───────────────────────────────────────────
+
+RESET_TOKEN_PREFIX = "pwreset:"
+RESET_TOKEN_TTL = 3600  # 1 hour
+
+
+async def create_password_reset_token(user_id: str) -> str:
+    """Create a one-time password reset token stored in Redis (1hr TTL)."""
+    redis = get_redis()
+    token = secrets.token_urlsafe(48)
+    await redis.setex(f"{RESET_TOKEN_PREFIX}{token}", RESET_TOKEN_TTL, user_id)
+    return token
+
+
+async def validate_password_reset_token(token: str) -> str:
+    """Validate and consume a password reset token. Returns user_id. Raises ValueError if invalid."""
+    redis = get_redis()
+    key = f"{RESET_TOKEN_PREFIX}{token}"
+    user_id = await redis.get(key)
+    if not user_id:
+        raise ValueError("Invalid or expired reset token")
+    await redis.delete(key)  # One-time use
+    return user_id

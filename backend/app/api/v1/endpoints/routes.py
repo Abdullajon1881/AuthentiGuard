@@ -9,7 +9,8 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy import select
+from fastapi.responses import JSONResponse
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
@@ -31,8 +32,10 @@ from ...schemas.schemas import (
     LayerScoresSchema,
     LoginRequest,
     ModelAttributionSchema,
+    ForgotPasswordRequest,
     RefreshRequest,
     RegisterRequest,
+    ResetPasswordRequest,
     TextSubmitRequest,
     TokenResponse,
     UrlSubmitRequest,
@@ -103,7 +106,7 @@ async def login(
     from ...core.config import get_settings
     settings = get_settings()
 
-    access_token  = create_access_token(str(user.id), user.role.value, user.email)
+    access_token  = create_access_token(str(user.id), user.role.value, user.email, user.tier.value)
     refresh_token = await create_refresh_token(str(user.id))
 
     return TokenResponse(
@@ -133,7 +136,7 @@ async def refresh_token(
     settings = get_settings()
 
     return TokenResponse(
-        access_token=create_access_token(str(user.id), user.role.value, user.email),
+        access_token=create_access_token(str(user.id), user.role.value, user.email, user.tier.value),
         refresh_token=new_refresh,
         expires_in=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
@@ -143,6 +146,60 @@ async def refresh_token(
 async def logout(body: RefreshRequest) -> None:
     from ...core.security import revoke_refresh_token
     await revoke_refresh_token(body.refresh_token)
+
+
+@router.post("/auth/forgot-password", status_code=status.HTTP_200_OK, tags=["auth"])
+async def forgot_password(
+    body: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Request a password reset token. Always returns 200 to prevent email enumeration.
+    In production, this would send an email with the reset link.
+    """
+    from ...core.security import create_password_reset_token
+
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+
+    if user:
+        token = await create_password_reset_token(str(user.id))
+        # TODO: Send email with reset link containing the token.
+        # For now, log it (dev only — remove before production).
+        import structlog
+        structlog.get_logger().info("password_reset_token_created", user_id=str(user.id), token=token)
+
+    # Always return success to prevent email enumeration
+    return {"message": "If an account with that email exists, a password reset link has been sent."}
+
+
+@router.post("/auth/reset-password", status_code=status.HTTP_200_OK, tags=["auth"])
+async def reset_password(
+    body: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Reset password using a valid reset token."""
+    from ...core.security import validate_password_reset_token, hash_password as _hash
+
+    try:
+        user_id = await validate_password_reset_token(body.token)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user.hashed_password = _hash(body.new_password)
+    await db.commit()
+
+    # Revoke all existing refresh tokens for security
+    from ...core.security import revoke_all_refresh_tokens
+    await revoke_all_refresh_tokens(user_id)
+
+    return {"message": "Password has been reset successfully. Please log in with your new password."}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -321,18 +378,30 @@ async def get_usage_stats(
 ) -> UsageStatsResponse:
     from sqlalchemy import func
     from ...core.config import get_settings
-    from ...workers.celery_app import TIER_TO_PRIORITY
 
     settings = get_settings()
 
+    # First of current month for monthly filtering
+    now = datetime.now(timezone.utc)
+    first_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
     # Count all completed jobs
-    jobs_q = await db.execute(
+    all_jobs_q = await db.execute(
         select(DetectionJob).where(
             DetectionJob.user_id == current_user.id,
             DetectionJob.status == JobStatus.COMPLETED,
         )
     )
-    all_jobs = jobs_q.scalars().all()
+    all_jobs = all_jobs_q.scalars().all()
+
+    # Count this month's jobs
+    monthly_jobs_q = await db.execute(
+        select(func.count(DetectionJob.id)).where(
+            DetectionJob.user_id == current_user.id,
+            DetectionJob.created_at >= first_of_month,
+        )
+    )
+    scans_this_month = monthly_jobs_q.scalar() or 0
 
     # Get results for label counts
     job_ids = [j.id for j in all_jobs]
@@ -352,13 +421,13 @@ async def get_usage_stats(
 
     return UsageStatsResponse(
         total_scans=len(all_jobs),
-        scans_this_month=len(all_jobs),   # TODO: filter by month
+        scans_this_month=scans_this_month,
         ai_detected=labels.count("AI"),
         human_detected=labels.count("HUMAN"),
         uncertain=labels.count("UNCERTAIN"),
         avg_score=round(sum(scores) / len(scores), 4) if scores else None,
         tier_limit=tier_limit_map.get(current_user.tier.value, 10),
-        tier_used=len(all_jobs),
+        tier_used=scans_this_month,
     )
 
 
@@ -367,14 +436,40 @@ async def get_usage_stats(
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/health", tags=["system"], include_in_schema=False)
-async def health() -> dict:
+async def health(db: AsyncSession = Depends(get_db)) -> JSONResponse:
+    """Health check — returns 200 if all services ok, 503 if any degraded."""
+    checks: dict[str, str] = {}
+
+    # Database check
+    try:
+        await db.execute(select(func.now()))
+        checks["database"] = "ok"
+    except Exception:
+        checks["database"] = "degraded"
+
+    # Redis check
     from ...core.redis import redis_ping
-    redis_ok = await redis_ping()
-    return {
-        "status":    "ok",
-        "redis":     "ok" if redis_ok else "degraded",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+    checks["redis"] = "ok" if await redis_ping() else "degraded"
+
+    # Celery check (are any workers alive?)
+    try:
+        from ...workers.celery_app import celery_app
+        insp = celery_app.control.inspect(timeout=2.0)
+        ping_result = insp.ping()
+        checks["celery"] = "ok" if ping_result else "degraded"
+    except Exception:
+        checks["celery"] = "degraded"
+
+    all_ok = all(v == "ok" for v in checks.values())
+
+    return JSONResponse(
+        status_code=200 if all_ok else 503,
+        content={
+            "status": "ok" if all_ok else "degraded",
+            "checks": checks,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -570,9 +665,6 @@ async def get_passport(content_hash: str) -> dict:
     Public endpoint — retrieve an authenticity passport by content hash.
     No authentication required.
     """
-    import sys, os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../../../../"))
-
     try:
         from authenticity_passport.signer.passport import PassportRegistry  # type: ignore
         registry = PassportRegistry()
@@ -593,9 +685,6 @@ async def verify_passport(body: dict) -> dict:
     Public endpoint — verify an authenticity passport.
     Accepts passport JSON and returns verification result.
     """
-    import sys, os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../../../../"))
-
     try:
         from authenticity_passport.signer.passport import PassportVerifier  # type: ignore
         verifier = PassportVerifier()

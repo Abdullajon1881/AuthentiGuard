@@ -1,0 +1,64 @@
+# ── Stage 1: dependency builder ────────────────────────────────
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    libpq-dev \
+    libsndfile1-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt backend-req.txt
+COPY ai/requirements.txt ai-req.txt
+RUN pip install --no-cache-dir --prefix=/install -r backend-req.txt -r ai-req.txt
+
+# ── Stage 2: runtime (CPU) ────────────────────────────────────
+FROM python:3.11-slim AS runtime
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    libsndfile1 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    ffmpeg \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd --gid 1001 appgroup && \
+    useradd --uid 1001 --gid appgroup --shell /bin/bash --create-home appuser
+
+COPY --from=builder /install /usr/local
+COPY --chown=appuser:appgroup backend/ ./app/
+COPY --chown=appuser:appgroup ai/ ./ai/
+
+# Pre-download GPT-2 model into image (prevents 5-10 min download on cold start)
+# This runs as root before switching to appuser so cache is accessible
+RUN python -c "from transformers import AutoTokenizer, AutoModelForCausalLM; \
+    AutoTokenizer.from_pretrained('gpt2'); \
+    AutoModelForCausalLM.from_pretrained('gpt2')" && \
+    chmod -R a+r /root/.cache/huggingface 2>/dev/null || true
+
+# Copy HuggingFace cache to appuser home so it persists after USER switch
+RUN mkdir -p /home/appuser/.cache && \
+    cp -r /root/.cache/huggingface /home/appuser/.cache/ && \
+    chown -R appuser:appgroup /home/appuser/.cache
+
+USER appuser
+
+ENV PYTHONPATH=/app
+ENV HF_HOME=/home/appuser/.cache/huggingface
+ENV TRANSFORMERS_CACHE=/home/appuser/.cache/huggingface
+
+HEALTHCHECK --interval=60s --timeout=30s --start-period=60s --retries=3 \
+    CMD celery -A app.workers.celery_app inspect ping --timeout 10 || exit 1
+
+# MVP: Only text + webhook queues. Add image,audio,video when those detectors are trained.
+CMD ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "-Q", "text,webhook", "--concurrency=2"]

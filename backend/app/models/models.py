@@ -107,6 +107,7 @@ class DetectionJob(Base):
     id: Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     celery_task_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(64))
 
     # Input
     content_type: Mapped[ContentType] = mapped_column(Enum(ContentType), nullable=False)
@@ -120,6 +121,7 @@ class DetectionJob(Base):
     status: Mapped[JobStatus] = mapped_column(
         Enum(JobStatus), nullable=False, default=JobStatus.PENDING, index=True
     )
+    version: Mapped[int]                = mapped_column(Integer, default=1, nullable=False)
     error_message: Mapped[str | None]   = mapped_column(Text)
     started_at:    Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at:  Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

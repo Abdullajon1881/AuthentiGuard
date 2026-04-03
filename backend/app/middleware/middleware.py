@@ -173,7 +173,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                     details={
                         "status_code":  status_code,
                         "elapsed_ms":   elapsed_ms,
-                        "query_params": dict(request.query_params),
+                        "query_params": self._sanitize_params(dict(request.query_params)),
                     },
                     success=success,
                     error_msg=error_msg,
@@ -184,7 +184,22 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             # Audit logging failures must never impact the API
             log.warning("audit_log_write_failed", error=str(exc))
 
+    _SENSITIVE_KEYS = {"password", "token", "secret", "key", "api_key", "bearer",
+                       "refresh_token", "access_token", "authorization", "credential"}
+
+    @classmethod
+    def _sanitize_params(cls, params: dict) -> dict:
+        """Redact query params that may contain secrets."""
+        return {
+            k: "***REDACTED***" if any(s in k.lower() for s in cls._SENSITIVE_KEYS) else v
+            for k, v in params.items()
+        }
+
     @staticmethod
     def _infer_resource(path: str) -> str:
         parts = [p for p in path.split("/") if p]
-        return parts[1] if len(parts) >= 2 else "unknown"
+        # Skip api version prefix (e.g. "api", "v1") to find actual resource
+        for part in parts:
+            if part not in {"api", "v1", "v2"}:
+                return part
+        return "unknown"

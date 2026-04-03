@@ -41,6 +41,24 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: Annotated[str, Field(min_length=10, max_length=128)]
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if not any(c.isupper() for c in v):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one digit")
+        return v
+
+
 class TokenResponse(BaseModel):
     access_token:  str
     refresh_token: str
@@ -92,7 +110,7 @@ class AnalysisJobResponse(BaseModel):
 
 class SentenceScoreSchema(BaseModel):
     text:     str
-    score:    float
+    score:    Annotated[float, Field(ge=0.0, le=1.0)]
     evidence: dict[str, Any] = {}
 
 
@@ -110,24 +128,24 @@ class EvidenceSignalSchema(BaseModel):
 
 
 class ModelAttributionSchema(BaseModel):
-    gpt_family:    float = 0.0
-    claude_family: float = 0.0
-    llama_family:  float = 0.0
-    human:         float = 0.0
-    other:         float = 0.0
+    gpt_family:    Annotated[float, Field(ge=0.0, le=1.0)] = 0.0
+    claude_family: Annotated[float, Field(ge=0.0, le=1.0)] = 0.0
+    llama_family:  Annotated[float, Field(ge=0.0, le=1.0)] = 0.0
+    human:         Annotated[float, Field(ge=0.0, le=1.0)] = 0.0
+    other:         Annotated[float, Field(ge=0.0, le=1.0)] = 0.0
 
 
 class DetectionResultResponse(BaseModel):
     job_id:            uuid.UUID
     status:            str
     content_type:      str
-    authenticity_score: float
-    confidence:        float
+    authenticity_score: Annotated[float, Field(ge=0.0, le=1.0)]
+    confidence:        Annotated[float, Field(ge=0.0, le=1.0)]
     label:             Literal["AI", "HUMAN", "UNCERTAIN"]
     layer_scores:      LayerScoresSchema
     sentence_scores:   list[SentenceScoreSchema] = []
     top_signals:       list[EvidenceSignalSchema] = []
-    model_attribution: ModelAttributionSchema
+    model_attribution: ModelAttributionSchema = ModelAttributionSchema()
     processing_ms:     int | None
     report_url:        str | None
     created_at:        datetime

@@ -1,42 +1,14 @@
 'use client'
 
-// Step 44: Mobile-responsive layout shell.
-// Sidebar collapses to a bottom nav on mobile.
-
-import { useState } from 'react'
+import { Search, LayoutGrid, Clock } from 'lucide-react'
 import { ThemeToggle } from '@/hooks/useTheme'
+import { cn } from '@/lib/cn'
 
 const NAV_ITEMS = [
-  { href: '/analyze',   label: 'Analyze',   icon: <SearchIcon /> },
-  { href: '/dashboard', label: 'Dashboard', icon: <GridIcon /> },
-  { href: '/jobs',      label: 'History',   icon: <ClockIcon /> },
+  { href: '/analyze',   label: 'Analyze',   icon: Search },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
+  { href: '/jobs',      label: 'History',   icon: Clock },
 ]
-
-function SearchIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-    </svg>
-  )
-}
-function GridIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-      <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
-    </svg>
-  )
-}
-function ClockIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-    </svg>
-  )
-}
 
 interface Props {
   children: React.ReactNode
@@ -44,128 +16,86 @@ interface Props {
 }
 
 export default function AppShell({ children, activePath = '' }: Props) {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-
   return (
-    <div style={{
-      display: 'flex', minHeight: '100vh',
-      background: 'var(--bg)',
-    }}>
+    <div className="flex min-h-screen bg-surface">
       {/* ── Sidebar (desktop) ─────────────────────────────── */}
-      <aside style={{
-        width: 220,
-        background: 'var(--bg-2)',
-        borderRight: '1px solid var(--border)',
-        display: 'flex', flexDirection: 'column',
-        padding: '20px 0',
-        flexShrink: 0,
-      }}
-        className="ag-sidebar"
+      <aside
+        className="ag-sidebar hidden md:flex w-[220px] shrink-0 flex-col bg-surface-2 border-r border-edge"
         aria-label="Primary navigation"
       >
         {/* Logo */}
-        <div style={{ padding: '0 20px 24px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{
-            fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 500,
-            letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--teal)',
-            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2,
-          }}>
-            <span style={{
-              width: 6, height: 6, borderRadius: '50%',
-              background: 'var(--teal)',
-              boxShadow: '0 0 8px var(--teal-glow)',
-            }} className="pulse-dot" />
-            AuthentiGuard
+        <div className="px-5 pt-6 pb-5 border-b border-edge">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" />
+            <span className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-accent">
+              AuthentiGuard
+            </span>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+          <p className="text-[11px] text-fg-3 pl-[14px]">
             AI Detection Platform
-          </div>
+          </p>
         </div>
 
         {/* Nav links */}
-        <nav style={{ padding: '16px 12px', flex: 1 }} aria-label="Main navigation">
-          {NAV_ITEMS.map(({ href, label, icon }) => {
+        <nav className="flex-1 px-3 py-4 space-y-0.5" aria-label="Main navigation">
+          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const active = activePath.startsWith(href)
             return (
               <a
                 key={href}
                 href={href}
                 aria-current={active ? 'page' : undefined}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '9px 10px',
-                  marginBottom: 2,
-                  borderRadius: 'var(--radius)',
-                  color: active ? 'var(--teal)' : 'var(--text-3)',
-                  background: active ? 'var(--teal-dim)' : 'transparent',
-                  textDecoration: 'none',
-                  fontSize: 13,
-                  fontWeight: active ? 500 : 400,
-                  transition: 'all 0.15s',
-                  border: active ? '1px solid var(--teal-dim)' : '1px solid transparent',
-                }}
-                onMouseEnter={e => { if (!active) { e.currentTarget.style.color = 'var(--text)'; e.currentTarget.style.background = 'var(--bg-3)' } }}
-                onMouseLeave={e => { if (!active) { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.background = 'transparent' } }}
+                className={cn(
+                  'flex items-center gap-2.5 px-3 py-2 rounded no-underline',
+                  'font-mono text-[12px] tracking-[0.04em] transition-colors duration-150',
+                  active
+                    ? 'text-accent border-l-2 border-accent bg-accent-dim ml-0'
+                    : 'text-fg-3 border-l-2 border-transparent hover:text-fg-2',
+                )}
               >
-                {icon}
+                <Icon size={15} strokeWidth={1.75} />
                 {label}
               </a>
             )
           })}
         </nav>
 
-        {/* Bottom — theme toggle */}
-        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
+        {/* Bottom */}
+        <div className="px-4 py-3 border-t border-edge flex items-center justify-between">
+          <span className="font-mono text-[10px] text-fg-3/50 tracking-wide">v0.1</span>
           <ThemeToggle />
         </div>
       </aside>
 
       {/* ── Main content ──────────────────────────────────── */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}
-        id="main-content" role="main">
+      <main className="flex-1 flex flex-col min-w-0 md:pb-0 pb-16" id="main-content" role="main">
         {children}
       </main>
 
       {/* ── Mobile bottom nav ─────────────────────────────── */}
       <nav
         aria-label="Mobile navigation"
-        style={{
-          display: 'none',
-          position: 'fixed', bottom: 0, left: 0, right: 0,
-          background: 'var(--bg-2)',
-          borderTop: '1px solid var(--border)',
-          padding: '8px 0',
-          justifyContent: 'space-around',
-          zIndex: 100,
-        }}
-        className="ag-mobile-nav"
+        className="md:hidden fixed bottom-0 left-0 right-0 bg-surface-2 border-t border-edge flex justify-around py-2 z-50"
       >
-        {NAV_ITEMS.map(({ href, label, icon }) => {
+        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const active = activePath.startsWith(href)
           return (
-            <a key={href} href={href}
+            <a
+              key={href}
+              href={href}
               aria-current={active ? 'page' : undefined}
-              style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-                color: active ? 'var(--teal)' : 'var(--text-3)',
-                textDecoration: 'none', fontSize: 10,
-                fontFamily: 'var(--font-mono)',
-                padding: '4px 16px',
-              }}>
-              {icon}
+              className={cn(
+                'flex flex-col items-center gap-1 px-4 py-1 no-underline',
+                'font-mono text-[10px] tracking-[0.06em] transition-colors duration-150',
+                active ? 'text-accent' : 'text-fg-3 hover:text-fg-2',
+              )}
+            >
+              <Icon size={16} strokeWidth={1.75} />
               {label}
             </a>
           )
         })}
       </nav>
-
-      <style>{`
-        @media (max-width: 768px) {
-          .ag-sidebar  { display: none !important; }
-          .ag-mobile-nav { display: flex !important; }
-          #main-content { padding-bottom: 64px; }
-        }
-      `}</style>
     </div>
   )
 }
