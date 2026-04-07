@@ -31,11 +31,12 @@ REFRESH_TOKEN_PREFIX = "refresh:"
 # ── Password hashing ──────────────────────────────────────────
 
 def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)
+    # bcrypt 5.0+ enforces 72-byte limit; truncate to stay safe
+    return pwd_context.hash(plain[:72])
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return pwd_context.verify(plain[:72], hashed)
 
 
 # ── Access token ──────────────────────────────────────────────

@@ -11,12 +11,13 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from .api.v1.endpoints.routes import router as api_router
-from .core.config import get_settings
-from .core.database import engine, Base
-from .middleware.middleware import AuditLogMiddleware, RateLimitMiddleware
+from app.api.v1.endpoints.routes import router as api_router
+from app.core.config import get_settings
+from app.core.database import engine, Base
+from app.middleware.middleware import AuditLogMiddleware, RateLimitMiddleware
 
 log = structlog.get_logger(__name__)
 
@@ -105,7 +106,7 @@ def create_app() -> FastAPI:
         auth_header = request.headers.get("authorization", "")
         if auth_header.startswith("Bearer "):
             try:
-                from .core.security import decode_access_token
+                from app.core.security import decode_access_token
                 payload = decode_access_token(auth_header[7:])
 
                 class _TokenUser:
@@ -126,6 +127,16 @@ def create_app() -> FastAPI:
 
     # ── Routes ────────────────────────────────────────────────
     app.include_router(api_router, prefix="/api/v1")
+
+    # ── Serve frontend landing page (dev mode) ───────────────
+    import os
+    frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/public"))
+    if os.path.isdir(frontend_dir):
+        @app.get("/", include_in_schema=False)
+        async def root():
+            return FileResponse(os.path.join(frontend_dir, "landing.html"))
+
+        app.mount("/", StaticFiles(directory=frontend_dir), name="frontend")
 
     # ── Global error handlers ─────────────────────────────────
     @app.exception_handler(Exception)

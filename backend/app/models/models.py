@@ -61,10 +61,12 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole), nullable=False, default=UserRole.API_CONSUMER
+        Enum(UserRole, values_callable=lambda e: [x.value for x in e]),
+        nullable=False, default=UserRole.API_CONSUMER
     )
     tier: Mapped[UserTier] = mapped_column(
-        Enum(UserTier), nullable=False, default=UserTier.FREE
+        Enum(UserTier, values_callable=lambda e: [x.value for x in e]),
+        nullable=False, default=UserTier.FREE
     )
     is_active: Mapped[bool]  = mapped_column(Boolean, default=True, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -110,7 +112,9 @@ class DetectionJob(Base):
     correlation_id: Mapped[str | None] = mapped_column(String(64))
 
     # Input
-    content_type: Mapped[ContentType] = mapped_column(Enum(ContentType), nullable=False)
+    content_type: Mapped[ContentType] = mapped_column(
+        Enum(ContentType, values_callable=lambda e: [x.value for x in e]), nullable=False
+    )
     input_text:   Mapped[str | None]  = mapped_column(Text)           # for text/code paste
     s3_key:       Mapped[str | None]  = mapped_column(String(1024))   # for file uploads
     file_name:    Mapped[str | None]  = mapped_column(String(512))
@@ -119,7 +123,8 @@ class DetectionJob(Base):
 
     # Status
     status: Mapped[JobStatus] = mapped_column(
-        Enum(JobStatus), nullable=False, default=JobStatus.PENDING, index=True
+        Enum(JobStatus, values_callable=lambda e: [x.value for x in e]),
+        nullable=False, default=JobStatus.PENDING, index=True
     )
     version: Mapped[int]                = mapped_column(Integer, default=1, nullable=False)
     error_message: Mapped[str | None]   = mapped_column(Text)
@@ -190,6 +195,4 @@ class AuditLog(Base):
     error_msg:   Mapped[str | None]   = mapped_column(Text)
 
     # No updated_at on audit logs — they are immutable
-    __table_args__ = (
-        {"postgresql_partition_by": "RANGE (created_at)"},  # ready for time-partitioning
-    )
+    __table_args__: dict = {}  # partitioning disabled for dev; enable in production

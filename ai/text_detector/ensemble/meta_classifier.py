@@ -40,7 +40,7 @@ from typing import Any
 
 import structlog
 
-from .base import LayerResult
+from ..layers.base import LayerResult
 
 log = structlog.get_logger(__name__)
 

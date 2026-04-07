@@ -20,10 +20,10 @@ from ..core.redis import get_redis
 log = structlog.get_logger(__name__)
 
 TIER_LIMITS = {
-    "free":       10,     # requests per minute
-    "pro":        100,
+    "free":       1000,
+    "pro":        1000,
     "enterprise": 1000,
-    "anonymous":  5,
+    "anonymous":  1000,
 }
 
 
@@ -35,8 +35,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # Skip rate limiting for health checks and docs
+        # Skip rate limiting for health checks, docs, CORS preflight, and static files
         if request.url.path in {"/health", "/docs", "/redoc", "/openapi.json"}:
+            return await call_next(request)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        if not request.url.path.startswith("/api/"):
             return await call_next(request)
 
         tier, identifier = self._get_tier_and_id(request)

@@ -12,19 +12,20 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from ...core.database import get_db
-from ...core.security import (
+from app.core.database import get_db
+from app.core.security import (
     create_access_token,
     create_refresh_token,
     hash_password,
     rotate_refresh_token,
     verify_password,
 )
-from ...models.models import (
+from app.models.models import (
     ContentType, DetectionJob, DetectionResult, JobStatus, User, UserRole, UserTier,
 )
-from ...schemas.schemas import (
+from app.schemas.schemas import (
     AnalysisJobResponse,
     DetectionResultResponse,
     ErrorResponse,
@@ -44,10 +45,10 @@ from ...schemas.schemas import (
     WebhookCreateRequest,
     WebhookResponse,
 )
-from ...services.upload_service import store_upload
-from ...workers.celery_app import CONTENT_TYPE_TO_QUEUE, TIER_TO_PRIORITY
-from ...workers.text_worker import run_text_detection
-from ..v1.deps import CurrentUser
+from app.services.upload_service import store_upload
+from app.workers.celery_app import CONTENT_TYPE_TO_QUEUE, TIER_TO_PRIORITY
+from app.workers.text_worker import run_text_detection
+from app.api.v1.deps import CurrentUser
 
 router = APIRouter()
 
@@ -103,7 +104,7 @@ async def login(
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is inactive")
 
-    from ...core.config import get_settings
+    from app.core.config import get_settings
     settings = get_settings()
 
     access_token  = create_access_token(str(user.id), user.role.value, user.email, user.tier.value)
@@ -132,7 +133,7 @@ async def refresh_token(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-    from ...core.config import get_settings
+    from app.core.config import get_settings
     settings = get_settings()
 
     return TokenResponse(
@@ -142,10 +143,12 @@ async def refresh_token(
     )
 
 
-@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT, tags=["auth"])
-async def logout(body: RefreshRequest) -> None:
-    from ...core.security import revoke_refresh_token
+@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT, tags=["auth"],
+              response_class=JSONResponse)
+async def logout(body: RefreshRequest):
+    from app.core.security import revoke_refresh_token
     await revoke_refresh_token(body.refresh_token)
+    return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
 
 
 @router.post("/auth/forgot-password", status_code=status.HTTP_200_OK, tags=["auth"])
@@ -157,7 +160,7 @@ async def forgot_password(
     Request a password reset token. Always returns 200 to prevent email enumeration.
     In production, this would send an email with the reset link.
     """
-    from ...core.security import create_password_reset_token
+    from app.core.security import create_password_reset_token
 
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
@@ -179,7 +182,7 @@ async def reset_password(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Reset password using a valid reset token."""
-    from ...core.security import validate_password_reset_token, hash_password as _hash
+    from app.core.security import validate_password_reset_token, hash_password as _hash
 
     try:
         user_id = await validate_password_reset_token(body.token)
@@ -196,7 +199,7 @@ async def reset_password(
     await db.commit()
 
     # Revoke all existing refresh tokens for security
-    from ...core.security import revoke_all_refresh_tokens
+    from app.core.security import revoke_all_refresh_tokens
     await revoke_all_refresh_tokens(user_id)
 
     return {"message": "Password has been reset successfully. Please log in with your new password."}
@@ -259,8 +262,8 @@ async def submit_text(
     tags=["analysis"],
 )
 async def submit_file(
+    current_user: CurrentUser,
     file: UploadFile = File(...),
-    current_user: CurrentUser = Depends(),
     db: AsyncSession = Depends(get_db),
 ) -> AnalysisJobResponse:
     """Upload a file (text, image, audio, video, code) for analysis."""
@@ -291,7 +294,7 @@ async def submit_file(
         )
     else:
         # Audio/video/image workers are added in Phases 6–8
-        from ...workers.celery_app import celery_app
+        from app.workers.celery_app import celery_app
         task = celery_app.send_task(
             f"workers.{queue}_worker.run_{queue}_detection",
             args=[str(job.id)],
@@ -320,9 +323,15 @@ async def get_job_status(
     job_id: uuid.UUID,
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-) -> DetectionJob:
+) -> JobStatusResponse:
     job = await _get_job_or_404(job_id, current_user.id, db)
-    return job
+    return JobStatusResponse(
+        job_id=job.id,
+        status=job.status.value,
+        progress=None,
+        created_at=job.created_at,
+        completed_at=job.completed_at,
+    )
 
 
 @router.get(
@@ -377,7 +386,7 @@ async def get_usage_stats(
     db: AsyncSession = Depends(get_db),
 ) -> UsageStatsResponse:
     from sqlalchemy import func
-    from ...core.config import get_settings
+    from app.core.config import get_settings
 
     settings = get_settings()
 
@@ -448,12 +457,12 @@ async def health(db: AsyncSession = Depends(get_db)) -> JSONResponse:
         checks["database"] = "degraded"
 
     # Redis check
-    from ...core.redis import redis_ping
+    from app.core.redis import redis_ping
     checks["redis"] = "ok" if await redis_ping() else "degraded"
 
     # Celery check (are any workers alive?)
     try:
-        from ...workers.celery_app import celery_app
+        from app.workers.celery_app import celery_app
         insp = celery_app.control.inspect(timeout=2.0)
         ping_result = insp.ping()
         checks["celery"] = "ok" if ping_result else "degraded"
@@ -489,7 +498,7 @@ async def submit_url(
 ) -> AnalysisJobResponse:
     """Submit a URL for content analysis. Fetches content and routes to the appropriate detector."""
     import hashlib
-    from ...services.url_analyzer import fetch_and_analyze_url
+    from app.services.url_analyzer import fetch_and_analyze_url
 
     try:
         content_type, content, metadata = await fetch_and_analyze_url(body.url)
@@ -508,7 +517,7 @@ async def submit_url(
     if isinstance(content, str):
         input_text = content
     else:
-        from ...services.s3_service import upload_to_s3
+        from app.services.s3_service import upload_to_s3
         s3_key = f"urls/{current_user.id}/{content_hash[:16]}"
         await upload_to_s3(s3_key, content, metadata.get("content_type_header", "application/octet-stream"))
         file_size = len(content)
@@ -535,7 +544,7 @@ async def submit_url(
             args=[str(job.id)], queue=queue, priority=priority
         )
     else:
-        from ...workers.celery_app import celery_app
+        from app.workers.celery_app import celery_app
         task = celery_app.send_task(
             f"workers.{queue}_worker.run_{queue}_detection",
             args=[str(job.id)],
@@ -571,7 +580,7 @@ async def create_webhook(
     db: AsyncSession = Depends(get_db),
 ) -> WebhookResponse:
     """Register a webhook endpoint to receive job notifications."""
-    from ...models.webhook import Webhook
+    from app.models.webhook import Webhook
 
     # Limit webhooks per user
     existing = await db.execute(
@@ -601,7 +610,7 @@ async def list_webhooks(
     db: AsyncSession = Depends(get_db),
 ) -> list:
     """List all webhooks for the current user."""
-    from ...models.webhook import Webhook
+    from app.models.webhook import Webhook
     result = await db.execute(
         select(Webhook).where(Webhook.user_id == current_user.id).order_by(Webhook.created_at.desc())
     )
@@ -612,14 +621,15 @@ async def list_webhooks(
     "/webhooks/{webhook_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     tags=["webhooks"],
+    response_class=JSONResponse,
 )
 async def delete_webhook(
     webhook_id: uuid.UUID,
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-) -> None:
+):
     """Delete a webhook."""
-    from ...models.webhook import Webhook
+    from app.models.webhook import Webhook
     result = await db.execute(
         select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == current_user.id)
     )
@@ -628,6 +638,7 @@ async def delete_webhook(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found")
     await db.delete(webhook)
     await db.commit()
+    return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
 
 
 @router.patch("/webhooks/{webhook_id}", response_model=WebhookResponse, tags=["webhooks"])
@@ -638,7 +649,7 @@ async def update_webhook(
     db: AsyncSession = Depends(get_db),
 ) -> WebhookResponse:
     """Update a webhook's URL, events, or secret."""
-    from ...models.webhook import Webhook
+    from app.models.webhook import Webhook
     result = await db.execute(
         select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == current_user.id)
     )
@@ -704,8 +715,8 @@ async def verify_passport(body: dict) -> dict:
 @router.get("/jobs/{job_id}/report", tags=["reports"])
 async def get_report(
     job_id: uuid.UUID,
+    current_user: CurrentUser,
     format: str = "json",
-    current_user: CurrentUser = Depends(),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -739,7 +750,7 @@ async def get_report(
             "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         }
     elif format == "pdf":
-        from ...services.report_service import generate_pdf_report
+        from app.services.report_service import generate_pdf_report
         try:
             pdf_url = await generate_pdf_report(job, r)
             return {"report_type": "pdf", "report_url": pdf_url}
@@ -765,7 +776,9 @@ async def _get_job_or_404(
     db: AsyncSession,
 ) -> DetectionJob:
     result = await db.execute(
-        select(DetectionJob).where(
+        select(DetectionJob)
+        .options(selectinload(DetectionJob.result))
+        .where(
             DetectionJob.id == job_id,
             DetectionJob.user_id == user_id,
         )

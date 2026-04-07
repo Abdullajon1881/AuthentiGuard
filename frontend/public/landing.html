@@ -1327,7 +1327,7 @@ h2 em { font-style: italic; color: var(--signal); }
 .result-panel {
   background: var(--bg);
   border: 1px solid var(--border2);
-  overflow: hidden;
+  overflow-y: auto;
   min-height: 400px;
 }
 
@@ -1540,6 +1540,39 @@ h2 em { font-style: italic; color: var(--signal); }
   flex-wrap: wrap;
   gap: 12px;
 }
+/* ── Sentence-level analysis ── */
+.rp-sentences { margin-top: 20px; }
+.rp-sentences-title {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.15em;
+  text-transform: uppercase; color: var(--text3); margin-bottom: 12px;
+}
+.sent-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 6px 10px; margin-bottom: 4px; border-radius: 4px;
+  border-left: 3px solid transparent; font-size: 13px; line-height: 1.5;
+}
+.sent-row.sent-ai { border-left-color: var(--red); background: rgba(255,80,60,0.06); }
+.sent-row.sent-human { border-left-color: var(--green); background: rgba(80,200,120,0.06); }
+.sent-row.sent-uncertain { border-left-color: var(--amber); background: rgba(200,160,60,0.06); }
+.sent-label {
+  flex-shrink: 0; width: 72px; font-family: var(--font-mono); font-size: 10px;
+  font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+}
+.sent-label small { font-weight: 400; opacity: 0.7; }
+.sent-ai .sent-label { color: var(--red); }
+.sent-human .sent-label { color: var(--green); }
+.sent-uncertain .sent-label { color: var(--amber); }
+.sent-text { color: var(--text2); }
+.sent-evidence { font-size: 11px; color: var(--text3); margin-top: 4px; font-style: italic; grid-column: 2; }
+
+/* Attribution bars */
+.rp-attribution-bars { margin-top: 8px; }
+.rp-attr-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.rp-attr-name { font-size: 11px; color: var(--text2); width: 60px; text-align: right; flex-shrink: 0; }
+.rp-attr-track { flex: 1; height: 6px; background: var(--border2); border-radius: 3px; overflow: hidden; }
+.rp-attr-fill { height: 100%; background: var(--signal); border-radius: 3px; transition: width 0.5s ease; }
+.rp-attr-pct { font-size: 11px; color: var(--text3); width: 32px; font-family: var(--font-mono); }
+
 .rp-signed {
   display: flex;
   align-items: center;
@@ -2116,11 +2149,13 @@ h2 em { font-style: italic; color: var(--signal); }
             <div class="rp-verdict-label" id="rp-verdict"></div>
             <div class="rp-model-guess" id="rp-attribution"></div>
             <div class="rp-model-guess" id="rp-confidence" style="margin-top:4px;color:var(--text3)"></div>
+            <div class="rp-attribution-bars" id="rp-attribution-bars"></div>
           </div>
         </div>
         <div class="rp-layers" id="rp-layers"></div>
         <div class="rp-flags" id="rp-flags-section"><div class="rp-flags-title">Detection Indicators</div><div id="rp-flags-list"></div></div>
         <div class="rp-reasoning" id="rp-reasoning-section"><div class="rp-reasoning-title">Reasoning</div><div class="rp-reasoning-text" id="rp-reasoning-text"></div></div>
+        <div class="rp-sentences" id="rp-sentences-section" style="display:none"><div class="rp-sentences-title">Sentence-Level Analysis</div><div id="rp-sentences-list"></div></div>
         <div class="rp-footer">
           <span class="rp-signed" id="rp-signed">✓ Cryptographically signed</span>
           <div class="rp-actions">
@@ -2168,7 +2203,7 @@ h2 em { font-style: italic; color: var(--signal); }
    ═══════════════════════════════════════════════════════════ */
 const CONFIG = {
   BASE_URL:   window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-              ? 'http://localhost:8000'
+              ? window.location.origin
               : 'https://api.authentiguard.io',
   RATE_LIMIT: 4000,  // ms between requests
 };
@@ -2285,8 +2320,13 @@ function showState(state) {
   });
 }
 
+var _loadingStepIndex = 0;
+var _loadingStepTimer = null;
+
 function showLoading() {
   showState('loading');
+  _loadingStepIndex = 0;
+  if (_loadingStepTimer) { clearInterval(_loadingStepTimer); _loadingStepTimer = null; }
   var steps = [
     document.getElementById('step-0'),
     document.getElementById('step-1'),
@@ -2296,9 +2336,38 @@ function showLoading() {
   steps.forEach(function(s) { s.className = 'rp-step'; });
   steps[0].classList.add('active');
 
-  setTimeout(function() { steps[0].classList.replace('active', 'done'); steps[1].classList.add('active'); }, 500);
-  setTimeout(function() { steps[1].classList.replace('active', 'done'); steps[2].classList.add('active'); }, 1100);
-  setTimeout(function() { steps[2].classList.replace('active', 'done'); steps[3].classList.add('active'); }, 1800);
+  // Animate steps quickly — all 4 complete within ~2s
+  _loadingStepTimer = setInterval(function() {
+    if (_loadingStepIndex < 3) {
+      steps[_loadingStepIndex].className = 'rp-step done';
+      _loadingStepIndex++;
+      steps[_loadingStepIndex].className = 'rp-step active';
+    } else {
+      clearInterval(_loadingStepTimer);
+      _loadingStepTimer = null;
+    }
+  }, 500);
+}
+
+function updateLoadingStep(status) {
+  if (status === 'completed') {
+    if (_loadingStepTimer) { clearInterval(_loadingStepTimer); _loadingStepTimer = null; }
+    var steps = [
+      document.getElementById('step-0'),
+      document.getElementById('step-1'),
+      document.getElementById('step-2'),
+      document.getElementById('step-3')
+    ];
+    // Rapidly finish all remaining steps
+    var delay = 0;
+    for (var i = 0; i <= 3; i++) {
+      (function(idx, d) {
+        setTimeout(function() { steps[idx].className = 'rp-step done'; }, d);
+      })(i, delay);
+      if (steps[i].className.indexOf('done') === -1) delay += 150;
+    }
+    _loadingStepIndex = 0;
+  }
 }
 
 function showError(msg) {
@@ -2320,9 +2389,29 @@ function showResult(data) {
   verdictEl.textContent = verdictMap[data.verdict] || data.verdict;
   verdictEl.className = 'rp-verdict-label verdict-' + (data.verdict === 'AI' ? 'ai' : data.verdict === 'HUMAN' ? 'human' : 'uncertain');
 
-  // attribution
-  document.getElementById('rp-attribution').innerHTML = 'Likely: <em>' + (data.model_attribution || 'Unknown') + '</em>';
-  document.getElementById('rp-confidence').textContent = 'Confidence: ' + capitalize(data.confidence || 'unknown') + ' · 4 layers analysed';
+  // B2: attribution with percentage bars
+  var likelyText = data.verdict === 'HUMAN' ? 'Human written' : (data.model_attribution_top || 'Unknown');
+  document.getElementById('rp-attribution').innerHTML = 'Likely: <em>' + likelyText + '</em>';
+  var confPct = Math.round((data.confidence || 0.5) * 100);
+  document.getElementById('rp-confidence').textContent = 'Confidence: ' + confPct + '% \u00b7 4 layers analysed';
+  var attrBars = document.getElementById('rp-attribution-bars');
+  if (attrBars && data.model_attribution) {
+    attrBars.innerHTML = '';
+    var attrEntries = Object.keys(data.model_attribution).map(function(k) {
+      return { key: k, val: data.model_attribution[k] };
+    }).filter(function(e) { return e.val > 0.05; }).sort(function(a,b) { return b.val - a.val; });
+    attrEntries.forEach(function(e) {
+      var pct = Math.round(e.val * 100);
+      var name = e.key.replace('_family','').replace('_',' ');
+      name = name.charAt(0).toUpperCase() + name.slice(1);
+      var row = document.createElement('div');
+      row.className = 'rp-attr-row';
+      row.innerHTML = '<span class="rp-attr-name">' + name + '</span>' +
+        '<div class="rp-attr-track"><div class="rp-attr-fill" style="width:' + pct + '%"></div></div>' +
+        '<span class="rp-attr-pct">' + pct + '%</span>';
+      attrBars.appendChild(row);
+    });
+  }
 
   // request id
   document.getElementById('rp-req-id').textContent = data.request_id || '';
@@ -2330,7 +2419,7 @@ function showResult(data) {
   // layers
   var layersEl = document.getElementById('rp-layers');
   layersEl.innerHTML = '';
-  var layerNames = { linguistic: 'Linguistic', statistical: 'Statistical', stylometric: 'Stylometric', meta_classifier: 'Meta-classifier' };
+  var layerNames = { perplexity: 'Perplexity Analysis', stylometry: 'Stylometric Fingerprint', transformer: 'Transformer Classifier', adversarial: 'Adversarial Detector' };
   if (data.layers) {
     Object.keys(data.layers).forEach(function(key) {
       var val = data.layers[key];
@@ -2374,6 +2463,30 @@ function showResult(data) {
     document.getElementById('rp-reasoning-section').style.display = 'none';
   }
 
+  // sentence-level scores
+  var sentSection = document.getElementById('rp-sentences-section');
+  var sentList = document.getElementById('rp-sentences-list');
+  if (sentSection && sentList && data.sentence_scores && data.sentence_scores.length > 0) {
+    sentList.innerHTML = '';
+    data.sentence_scores.forEach(function(s) {
+      var pct = Math.round(s.score * 100);
+      var lbl = s.evidence && s.evidence.label ? s.evidence.label : (s.score > 0.6 ? 'AI' : s.score < 0.4 ? 'HUMAN' : 'UNCERTAIN');
+      var cls = lbl === 'AI' ? 'sent-ai' : lbl === 'HUMAN' ? 'sent-human' : 'sent-uncertain';
+      var row = document.createElement('div');
+      row.className = 'sent-row ' + cls;
+      var evidenceHtml = '';
+      if (s.evidence && s.evidence.signals && s.evidence.signals.length) {
+        evidenceHtml = '<div class="sent-evidence">' + s.evidence.signals.map(escapeHtml).join(' &middot; ') + '</div>';
+      }
+      row.innerHTML = '<span class="sent-label">' + lbl + ' <small>' + pct + '%</small></span>' +
+        '<span class="sent-text">' + escapeHtml(s.text) + '</span>' + evidenceHtml;
+      sentList.appendChild(row);
+    });
+    sentSection.style.display = 'block';
+  } else if (sentSection) {
+    sentSection.style.display = 'none';
+  }
+
   // signed timestamp
   var ts = data.signed_at || new Date().toISOString();
   document.getElementById('rp-signed').textContent = '✓ Cryptographically signed · ' + ts.replace('T', ' ').replace(/\.\d+Z$/, 'Z');
@@ -2384,25 +2497,73 @@ function showResult(data) {
 /* ═══════════════════════════════════════════════════════════
    API
    ═══════════════════════════════════════════════════════════ */
+/* ── Poll a job until completed/failed ── */
+async function pollJob(jobId) {
+  var maxAttempts = 60; // 2 minutes max
+  for (var i = 0; i < maxAttempts; i++) {
+    await new Promise(function(r) { setTimeout(r, 2000); });
+    var res = await authFetch(CONFIG.BASE_URL + '/api/v1/jobs/' + jobId);
+    if (!res.ok) throw new Error('Failed to check job status (Error ' + res.status + ')');
+    var job = await res.json();
+    updateLoadingStep(job.status);
+    if (job.status === 'completed') return job;
+    if (job.status === 'failed') throw new Error('Analysis failed. The server could not process your content.');
+  }
+  throw new Error('Analysis timed out. Please try again.');
+}
+
+/* ── Fetch the result for a completed job and map to UI format ── */
+async function fetchJobResult(jobId) {
+  var res = await authFetch(CONFIG.BASE_URL + '/api/v1/jobs/' + jobId + '/result');
+  if (!res.ok) throw new Error('Failed to fetch analysis result (Error ' + res.status + ')');
+  var r = await res.json();
+  // Map backend DetectionResultResponse → frontend showResult format
+  var topModel = 'Unknown';
+  if (r.model_attribution) {
+    var best = 0;
+    Object.keys(r.model_attribution).forEach(function(k) {
+      if (k === 'human') return; // skip human — we want the top AI model
+      if (r.model_attribution[k] > best) { best = r.model_attribution[k]; topModel = k.replace('_family', '').replace('_', ' '); }
+    });
+    if (best < 0.1) topModel = 'Unknown';
+    else topModel = topModel.charAt(0).toUpperCase() + topModel.slice(1);
+  }
+  // B1: Keep layer keys as-is (perplexity/stylometry/transformer/adversarial)
+  var layers = {};
+  if (r.layer_scores) {
+    Object.keys(r.layer_scores).forEach(function(k) {
+      if (r.layer_scores[k] != null) layers[k] = r.layer_scores[k];
+    });
+  }
+  return {
+    score: r.authenticity_score,
+    verdict: r.label,
+    model_attribution_top: topModel,
+    model_attribution: r.model_attribution || {},
+    confidence: r.confidence || 0.5,
+    request_id: r.job_id,
+    layers: layers,
+    flags: (r.top_signals || []).map(function(s) { return s.signal + ': ' + s.value; }),
+    sentence_scores: r.sentence_scores || [],
+    reasoning: null,
+    signed_at: r.completed_at || r.created_at,
+  };
+}
+
 async function fetchAnalysis(type, content) {
-  var endpoints = {
-    text:  CONFIG.BASE_URL + '/api/v1/analyze/text',
-    code:  CONFIG.BASE_URL + '/api/v1/analyze/code',
-    image: CONFIG.BASE_URL + '/api/v1/analyze/image',
-  };
-  var bodies = {
-    text:  { content: content },
-    code:  { content: content },
-    image: { url: content },
-  };
+  var endpoint, body;
+  if (type === 'text' || type === 'code') {
+    endpoint = CONFIG.BASE_URL + '/api/v1/analyze/text';
+    body = { text: content, content_type: type };
+  } else if (type === 'image') {
+    endpoint = CONFIG.BASE_URL + '/api/v1/analyze/url';
+    body = { url: content };
+  }
 
-  var headers = { 'Content-Type': 'application/json' };
-  if (accessToken) headers['Authorization'] = 'Bearer ' + accessToken;
-
-  var res = await fetch(endpoints[type], {
+  var res = await authFetch(endpoint, {
     method: 'POST',
-    headers: headers,
-    body: JSON.stringify(bodies[type]),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
 
   var data;
@@ -2419,10 +2580,12 @@ async function fetchAnalysis(type, content) {
       invalid_url: 'Please enter a valid, publicly accessible image URL.',
       internal_error: 'The analysis server encountered an error. Please try again.',
     };
-    throw new Error(errMap[data.error] || data.message || 'Error ' + res.status);
+    throw new Error(errMap[data.error] || data.detail || data.message || 'Error ' + res.status);
   }
 
-  return data;
+  // Backend returns { job_id, status, poll_url } — poll until done
+  await pollJob(data.job_id);
+  return await fetchJobResult(data.job_id);
 }
 
 async function runAnalysis(type) {
@@ -2676,12 +2839,8 @@ async function runMediaUploadAnalysis(mediaType) {
     var formData = new FormData();
     formData.append('file', file);
 
-    var uploadHeaders = {};
-    if (accessToken) uploadHeaders['Authorization'] = 'Bearer ' + accessToken;
-
-    var res = await fetch(CONFIG.BASE_URL + '/api/v1/analyze/file', {
+    var res = await authFetch(CONFIG.BASE_URL + '/api/v1/analyze/file', {
       method: 'POST',
-      headers: uploadHeaders,
       body: formData,
     });
 
@@ -2697,10 +2856,13 @@ async function runMediaUploadAnalysis(mediaType) {
         file_too_large: 'File is too large. Maximum size is ' + cfg.maxLabel + '.',
         internal_error: 'The analysis server encountered an error. Please try again.',
       };
-      throw new Error(errMap[data.error] || data.message || 'Error ' + res.status);
+      throw new Error(errMap[data.error] || data.detail || data.message || 'Error ' + res.status);
     }
 
-    showResult(data);
+    // Backend returns { job_id, status, poll_url } — poll until done
+    await pollJob(data.job_id);
+    var result = await fetchJobResult(data.job_id);
+    showResult(result);
   } catch (err) {
     var msg = err.message || 'An unexpected error occurred.';
     if (msg === 'Failed to fetch' || msg.includes('NetworkError')) {
@@ -2846,6 +3008,42 @@ showState('placeholder');
 var authMode = 'register'; // 'register' or 'login'
 var currentUser = null;
 var accessToken = null;
+var _refreshing = null; // in-flight refresh promise
+
+async function refreshAccessToken() {
+  if (_refreshing) return _refreshing;
+  var rt = localStorage.getItem('ag_refresh');
+  if (!rt) { logoutUser(); throw new Error('Session expired. Please log in again.'); }
+  _refreshing = (async function() {
+    try {
+      var res = await fetch(CONFIG.BASE_URL + '/api/v1/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: rt }),
+      });
+      if (!res.ok) { logoutUser(); throw new Error('Session expired. Please log in again.'); }
+      var data = await res.json();
+      accessToken = data.access_token;
+      if (data.refresh_token) localStorage.setItem('ag_refresh', data.refresh_token);
+      localStorage.setItem('ag_user', JSON.stringify({ user: currentUser, accessToken: accessToken }));
+      return accessToken;
+    } finally { _refreshing = null; }
+  })();
+  return _refreshing;
+}
+
+async function authFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  if (accessToken) opts.headers['Authorization'] = 'Bearer ' + accessToken;
+  var res = await fetch(url, opts);
+  if (res.status === 401 && localStorage.getItem('ag_refresh')) {
+    await refreshAccessToken();
+    opts.headers['Authorization'] = 'Bearer ' + accessToken;
+    res = await fetch(url, opts);
+  }
+  return res;
+}
 
 // Restore session from localStorage
 (function restoreSession() {
@@ -3002,9 +3200,8 @@ function showAuthError(msg) {
 }
 
 function oauthLogin(provider) {
-  // OAuth redirect — will be configured when OAuth is set up on the backend
-  var oauthUrl = CONFIG.BASE_URL + '/api/v1/auth/' + provider;
-  window.location.href = oauthUrl;
+  // OAuth not yet configured — show friendly message
+  showAuthError(provider.charAt(0).toUpperCase() + provider.slice(1) + ' login coming soon. Please use email and password.');
 }
 
 function updateAuthUI() {
