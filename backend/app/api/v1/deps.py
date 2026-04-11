@@ -69,6 +69,42 @@ async def _get_current_user(
 CurrentUser = Annotated[User, Depends(_get_current_user)]
 
 
+async def _get_optional_user(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(bearer_scheme),
+    ],
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """
+    Resolve the current user from the Bearer JWT, or return None for anonymous access.
+    Used by demo/public endpoints that work with or without authentication.
+    """
+    if credentials is None:
+        return None
+
+    try:
+        payload = decode_access_token(credentials.credentials)
+    except ValueError:
+        return None
+
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+
+    result = await db.execute(
+        select(User).where(User.id == uuid.UUID(user_id))
+    )
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active:
+        return None
+
+    return user
+
+
+OptionalCurrentUser = Annotated[User | None, Depends(_get_optional_user)]
+
+
 # ── Role guards ───────────────────────────────────────────────
 
 def require_role(*roles: UserRole):

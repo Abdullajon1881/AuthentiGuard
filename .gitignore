@@ -65,8 +65,10 @@ Thumbs.db
 reports/
 *.html
 !docs/**/*.html
+login.json
 
 # Docker volumes
 postgres_data/
 redis_data/
 minio_data/
+.gstack/

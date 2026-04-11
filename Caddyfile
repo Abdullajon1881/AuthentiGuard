@@ -1,8 +1,13 @@
 # AuthentiGuard Production Caddyfile
 # Auto-HTTPS via Let's Encrypt, reverse proxy to backend + frontend
 
-# Main site — serves Next.js frontend
-authentiguard.io, www.authentiguard.io {
+# Main site — landing page + API from FastAPI, dashboard from Next.js
+{$DOMAIN:authentiguard.io}, www.{$DOMAIN:authentiguard.io} {
+	# Reject oversized request bodies (protects against memory exhaustion)
+	request_body {
+		max_size 100MB
+	}
+
 	# API routes → FastAPI backend
 	handle /api/* {
 		reverse_proxy backend:8000
@@ -13,7 +18,22 @@ authentiguard.io, www.authentiguard.io {
 		reverse_proxy backend:8000
 	}
 
-	# Everything else → Next.js frontend
+	# Landing page (served by FastAPI at GET /)
+	handle / {
+		reverse_proxy backend:8000
+	}
+
+	# Static assets for landing page
+	handle /landing.* {
+		reverse_proxy backend:8000
+	}
+
+	# OpenAPI docs (non-production only)
+	handle /docs* {
+		reverse_proxy backend:8000
+	}
+
+	# Dashboard routes → Next.js frontend
 	handle {
 		reverse_proxy frontend:3000
 	}
@@ -40,7 +60,11 @@ authentiguard.io, www.authentiguard.io {
 }
 
 # API subdomain — direct to FastAPI
-api.authentiguard.io {
+api.{$DOMAIN:authentiguard.io} {
+	request_body {
+		max_size 100MB
+	}
+
 	reverse_proxy backend:8000
 
 	header {
@@ -59,8 +83,7 @@ api.authentiguard.io {
 }
 
 # Flower dashboard — protected behind auth, internal access only
-# Access via: https://flower.authentiguard.io
-flower.authentiguard.io {
+flower.{$DOMAIN:authentiguard.io} {
 	basicauth {
 		# Replace with hashed password: caddy hash-password
 		admin {$FLOWER_PASSWORD_HASH}

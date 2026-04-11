@@ -22,17 +22,89 @@ from app.middleware.middleware import AuditLogMiddleware, RateLimitMiddleware
 log = structlog.get_logger(__name__)
 
 
+DEMO_USER_ID = uuid.UUID("00000000-0000-4000-a000-000000000001")
+DEMO_USER_EMAIL = "demo@authentiguard.local"
+
+
+async def _ensure_db_tables():
+    """Create all tables if they don't exist (idempotent)."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    log.info("db_tables_ensured")
+
+
+async def _ensure_minio_buckets(settings):
+    """Create S3/MinIO buckets if they don't exist."""
+    import boto3
+    from botocore.exceptions import ClientError
+
+    kwargs = {
+        "region_name": settings.AWS_REGION,
+        "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
+        "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
+    }
+    if settings.S3_ENDPOINT_URL:
+        kwargs["endpoint_url"] = settings.S3_ENDPOINT_URL
+
+    s3 = boto3.client("s3", **kwargs)
+    for bucket in [settings.S3_BUCKET_UPLOADS, settings.S3_BUCKET_REPORTS]:
+        try:
+            s3.head_bucket(Bucket=bucket)
+            log.info("s3_bucket_exists", bucket=bucket)
+        except ClientError:
+            s3.create_bucket(Bucket=bucket)
+            log.info("s3_bucket_created", bucket=bucket)
+
+
+async def _ensure_demo_user():
+    """Seed a system demo user for anonymous API access."""
+    from sqlalchemy import select
+    from app.core.database import AsyncSessionLocal
+    from app.models.models import User, UserRole, UserTier
+    from app.core.security import hash_password
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(User).where(User.id == DEMO_USER_ID)
+        )
+        if result.scalar_one_or_none() is None:
+            demo_user = User(
+                id=DEMO_USER_ID,
+                email=DEMO_USER_EMAIL,
+                hashed_password=hash_password("__demo_nologin__"),
+                full_name="Demo User",
+                role=UserRole.API_CONSUMER,
+                tier=UserTier.FREE,
+                is_active=True,
+                is_verified=True,
+            )
+            session.add(demo_user)
+            await session.commit()
+            log.info("demo_user_created", user_id=str(DEMO_USER_ID))
+        else:
+            log.info("demo_user_exists")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown hooks."""
     settings = get_settings()
     log.info("starting_up", env=settings.APP_ENV, version=settings.APP_VERSION)
 
-    # Create DB tables (in production, use Alembic migrations instead)
-    if settings.APP_ENV == "development":
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        log.info("db_tables_created")
+    # Ensure DB tables exist (idempotent — safe for all environments)
+    await _ensure_db_tables()
+
+    # Ensure S3/MinIO buckets exist
+    try:
+        await _ensure_minio_buckets(settings)
+    except Exception as exc:
+        log.warning("minio_bucket_init_failed", error=str(exc))
+
+    # Seed demo user for anonymous demo access
+    try:
+        await _ensure_demo_user()
+    except Exception as exc:
+        log.warning("demo_user_seed_failed", error=str(exc))
 
     yield
 
@@ -88,9 +160,9 @@ def create_app() -> FastAPI:
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
                 "script-src 'self'; "
-                "style-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
                 "img-src 'self' data: https:; "
-                "font-src 'self'; "
+                "font-src 'self' https://fonts.gstatic.com; "
                 "connect-src 'self'"
             )
         return response
@@ -124,6 +196,19 @@ def create_app() -> FastAPI:
     # ── Rate limiting + audit logging ─────────────────────────
     app.add_middleware(AuditLogMiddleware)
     app.add_middleware(RateLimitMiddleware)
+
+    # ── Health check ─────────────────────────────────────────
+    @app.get("/health", include_in_schema=False)
+    async def health():
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(__import__("sqlalchemy").text("SELECT 1"))
+            return {"status": "healthy"}
+        except Exception:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"status": "unhealthy"},
+            )
 
     # ── Routes ────────────────────────────────────────────────
     app.include_router(api_router, prefix="/api/v1")

@@ -48,7 +48,20 @@ from app.schemas.schemas import (
 from app.services.upload_service import store_upload
 from app.workers.celery_app import CONTENT_TYPE_TO_QUEUE, TIER_TO_PRIORITY
 from app.workers.text_worker import run_text_detection
-from app.api.v1.deps import CurrentUser
+from app.api.v1.deps import CurrentUser, OptionalCurrentUser
+
+# Demo user ID — matches the seeded demo user in main.py lifespan
+DEMO_USER_ID = uuid.UUID("00000000-0000-4000-a000-000000000001")
+
+
+def _resolve_user_id(current_user) -> uuid.UUID:
+    """Return the user's ID, or the demo user ID for anonymous requests."""
+    return current_user.id if current_user else DEMO_USER_ID
+
+
+def _resolve_tier(current_user) -> str:
+    """Return the user's tier, or 'free' for anonymous requests."""
+    return current_user.tier.value if current_user else "free"
 
 router = APIRouter()
 
@@ -168,9 +181,8 @@ async def forgot_password(
     if user:
         token = await create_password_reset_token(str(user.id))
         # TODO: Send email with reset link containing the token.
-        # For now, log it (dev only — remove before production).
         import structlog
-        structlog.get_logger().info("password_reset_token_created", user_id=str(user.id), token=token)
+        structlog.get_logger().info("password_reset_token_created", user_id=str(user.id))
 
     # Always return success to prevent email enumeration
     return {"message": "If an account with that email exists, a password reset link has been sent."}
@@ -217,7 +229,7 @@ async def reset_password(
 )
 async def submit_text(
     body: TextSubmitRequest,
-    current_user: CurrentUser,
+    current_user: OptionalCurrentUser,
     db: AsyncSession = Depends(get_db),
 ) -> AnalysisJobResponse:
     """Submit text/code paste for analysis. Returns a job_id to poll."""
@@ -226,7 +238,7 @@ async def submit_text(
     content_hash = hashlib.sha256(body.text.encode()).hexdigest()
 
     job = DetectionJob(
-        user_id=current_user.id,
+        user_id=_resolve_user_id(current_user),
         content_type=content_type,
         input_text=body.text,
         content_hash=content_hash,
@@ -237,7 +249,7 @@ async def submit_text(
     await db.refresh(job)
 
     # Dispatch to Celery queue
-    priority = TIER_TO_PRIORITY.get(current_user.tier.value, 1)
+    priority = TIER_TO_PRIORITY.get(_resolve_tier(current_user), 1)
     task = run_text_detection.apply_async(
         args=[str(job.id)],
         queue="text",
@@ -262,17 +274,18 @@ async def submit_text(
     tags=["analysis"],
 )
 async def submit_file(
-    current_user: CurrentUser,
+    current_user: OptionalCurrentUser,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ) -> AnalysisJobResponse:
     """Upload a file (text, image, audio, video, code) for analysis."""
+    user_id = _resolve_user_id(current_user)
     s3_key, content_hash, content_type, file_size = await store_upload(
-        file, str(current_user.id)
+        file, str(user_id)
     )
 
     job = DetectionJob(
-        user_id=current_user.id,
+        user_id=user_id,
         content_type=content_type,
         s3_key=s3_key,
         file_name=file.filename,
@@ -286,7 +299,7 @@ async def submit_file(
 
     # Route to appropriate queue based on content type
     queue    = CONTENT_TYPE_TO_QUEUE.get(content_type.value, "text")
-    priority = TIER_TO_PRIORITY.get(current_user.tier.value, 1)
+    priority = TIER_TO_PRIORITY.get(_resolve_tier(current_user), 1)
 
     if queue == "text":
         task = run_text_detection.apply_async(
@@ -321,10 +334,10 @@ async def submit_file(
 @router.get("/jobs/{job_id}", response_model=JobStatusResponse, tags=["jobs"])
 async def get_job_status(
     job_id: uuid.UUID,
-    current_user: CurrentUser,
+    current_user: OptionalCurrentUser,
     db: AsyncSession = Depends(get_db),
 ) -> JobStatusResponse:
-    job = await _get_job_or_404(job_id, current_user.id, db)
+    job = await _get_job_or_404(job_id, _resolve_user_id(current_user), db)
     return JobStatusResponse(
         job_id=job.id,
         status=job.status.value,
@@ -341,10 +354,10 @@ async def get_job_status(
 )
 async def get_job_result(
     job_id: uuid.UUID,
-    current_user: CurrentUser,
+    current_user: OptionalCurrentUser,
     db: AsyncSession = Depends(get_db),
 ) -> DetectionResultResponse:
-    job = await _get_job_or_404(job_id, current_user.id, db)
+    job = await _get_job_or_404(job_id, _resolve_user_id(current_user), db)
 
     if job.status != JobStatus.COMPLETED:
         raise HTTPException(
@@ -493,12 +506,14 @@ async def health(db: AsyncSession = Depends(get_db)) -> JSONResponse:
 )
 async def submit_url(
     body: UrlSubmitRequest,
-    current_user: CurrentUser,
+    current_user: OptionalCurrentUser,
     db: AsyncSession = Depends(get_db),
 ) -> AnalysisJobResponse:
     """Submit a URL for content analysis. Fetches content and routes to the appropriate detector."""
     import hashlib
     from app.services.url_analyzer import fetch_and_analyze_url
+
+    user_id = _resolve_user_id(current_user)
 
     try:
         content_type, content, metadata = await fetch_and_analyze_url(body.url)
@@ -518,12 +533,12 @@ async def submit_url(
         input_text = content
     else:
         from app.services.s3_service import upload_to_s3
-        s3_key = f"urls/{current_user.id}/{content_hash[:16]}"
+        s3_key = f"urls/{user_id}/{content_hash[:16]}"
         await upload_to_s3(s3_key, content, metadata.get("content_type_header", "application/octet-stream"))
         file_size = len(content)
 
     job = DetectionJob(
-        user_id=current_user.id,
+        user_id=user_id,
         content_type=content_type,
         input_text=input_text,
         s3_key=s3_key,
@@ -537,7 +552,7 @@ async def submit_url(
     await db.refresh(job)
 
     queue    = CONTENT_TYPE_TO_QUEUE.get(content_type.value, "text")
-    priority = TIER_TO_PRIORITY.get(current_user.tier.value, 1)
+    priority = TIER_TO_PRIORITY.get(_resolve_tier(current_user), 1)
 
     if queue == "text":
         task = run_text_detection.apply_async(
@@ -715,7 +730,7 @@ async def verify_passport(body: dict) -> dict:
 @router.get("/jobs/{job_id}/report", tags=["reports"])
 async def get_report(
     job_id: uuid.UUID,
-    current_user: CurrentUser,
+    current_user: OptionalCurrentUser,
     format: str = "json",
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -723,7 +738,7 @@ async def get_report(
     Generate or retrieve a detection report.
     Supports format=json or format=pdf.
     """
-    job = await _get_job_or_404(job_id, current_user.id, db)
+    job = await _get_job_or_404(job_id, _resolve_user_id(current_user), db)
 
     if job.status != JobStatus.COMPLETED or not job.result:
         raise HTTPException(

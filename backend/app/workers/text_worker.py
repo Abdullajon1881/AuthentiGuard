@@ -265,23 +265,7 @@ class _DevFallbackDetector:
             top_signals.append({"signal": "Natural contractions present", "value": f"{contraction_count} found", "weight": "medium"})
         r.evidence_summary["top_signals"] = top_signals[:5]
 
-        # Model attribution
-        if score > 0.55:
-            r.model_attribution = {
-                "gpt_family": round(score * 0.45, 3),
-                "claude_family": round(score * 0.30, 3),
-                "llama_family": round(score * 0.15, 3),
-                "human": round(1 - score, 3),
-                "other": round(score * 0.10, 3),
-            }
-        else:
-            r.model_attribution = {
-                "gpt_family": round(score * 0.2, 3),
-                "claude_family": round(score * 0.1, 3),
-                "llama_family": round(score * 0.05, 3),
-                "human": round(max(0, 1 - score * 0.8), 3),
-                "other": round(score * 0.05, 3),
-            }
+        r.model_attribution = {}
         return r
 
 

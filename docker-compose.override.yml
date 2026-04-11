@@ -1,0 +1,12 @@
+# Local dev overrides — avoids port conflicts with native services
+services:
+  postgres:
+    ports: !override
+      - "5434:5432"
+  redis:
+    ports:
+      - "6380:6379"
+  minio:
+    ports:
+      - "9002:9000"
+      - "9003:9001"

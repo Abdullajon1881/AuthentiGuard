@@ -2011,10 +2011,10 @@ h2 em { font-style: italic; color: var(--signal); }
     <div>
       <div class="demo-tabs" role="tablist">
         <button class="demo-tab" role="tab" aria-selected="true" data-tab="text">Text</button>
-        <button class="demo-tab" role="tab" aria-selected="false" data-tab="image">Image URL</button>
+        <button class="demo-tab" role="tab" aria-selected="false" data-tab="image">Image URL <span style="font-size:0.65em;opacity:0.7;vertical-align:super">BETA</span></button>
         <button class="demo-tab" role="tab" aria-selected="false" data-tab="code">Code</button>
-        <button class="demo-tab" role="tab" aria-selected="false" data-tab="audio">Audio</button>
-        <button class="demo-tab" role="tab" aria-selected="false" data-tab="video">Video</button>
+        <button class="demo-tab" role="tab" aria-selected="false" data-tab="audio">Audio <span style="font-size:0.65em;opacity:0.7;vertical-align:super">BETA</span></button>
+        <button class="demo-tab" role="tab" aria-selected="false" data-tab="video">Video <span style="font-size:0.65em;opacity:0.7;vertical-align:super">BETA</span></button>
       </div>
 
       <!-- Text panel -->
@@ -2031,6 +2031,7 @@ h2 em { font-style: italic; color: var(--signal); }
 
       <!-- Image panel -->
       <div class="demo-panel" id="panel-image" role="tabpanel">
+        <div style="padding:6px 12px;background:rgba(255,180,0,0.1);border:1px solid rgba(255,180,0,0.3);border-radius:6px;font-size:0.8em;color:#b8860b;margin-bottom:8px">Beta — image detection uses pretrained models. Accuracy is limited until fine-tuned classifiers are trained.</div>
         <div class="demo-input-area">
           <div class="demo-bar"><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><span class="demo-bar-url">authentiguard.io / analyze / image</span></div>
 
@@ -2076,6 +2077,7 @@ h2 em { font-style: italic; color: var(--signal); }
 
       <!-- Audio panel -->
       <div class="demo-panel" id="panel-audio" role="tabpanel">
+        <div style="padding:6px 12px;background:rgba(255,180,0,0.1);border:1px solid rgba(255,180,0,0.3);border-radius:6px;font-size:0.8em;color:#b8860b;margin-bottom:8px">Beta — audio detection uses pretrained models. Accuracy is limited until fine-tuned classifiers are trained.</div>
         <div class="demo-input-area">
           <div class="demo-bar"><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><span class="demo-bar-url">authentiguard.io / analyze / audio</span></div>
 
@@ -2106,6 +2108,7 @@ h2 em { font-style: italic; color: var(--signal); }
 
       <!-- Video panel -->
       <div class="demo-panel" id="panel-video" role="tabpanel">
+        <div style="padding:6px 12px;background:rgba(255,180,0,0.1);border:1px solid rgba(255,180,0,0.3);border-radius:6px;font-size:0.8em;color:#b8860b;margin-bottom:8px">Beta — video detection uses pretrained models. Accuracy is limited until fine-tuned classifiers are trained.</div>
         <div class="demo-input-area">
           <div class="demo-bar"><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><div class="demo-bar-dot"></div><span class="demo-bar-url">authentiguard.io / analyze / video</span></div>
 
@@ -2409,7 +2412,8 @@ function showResult(data) {
   var likelyText = data.verdict === 'HUMAN' ? 'Human written' : (data.model_attribution_top || 'Unknown');
   document.getElementById('rp-attribution').innerHTML = 'Likely: <em>' + likelyText + '</em>';
   var confPct = Math.round((data.confidence || 0.5) * 100);
-  document.getElementById('rp-confidence').textContent = 'Confidence: ' + confPct + '% \u00b7 4 layers analysed';
+  var layerCount = data.layers ? Object.keys(data.layers).length : 0;
+  document.getElementById('rp-confidence').textContent = 'Confidence: ' + confPct + '% \u00b7 ' + layerCount + ' layer' + (layerCount !== 1 ? 's' : '') + ' analysed';
   var attrBars = document.getElementById('rp-attribution-bars');
   if (attrBars && data.model_attribution) {
     attrBars.innerHTML = '';
@@ -2435,7 +2439,24 @@ function showResult(data) {
   // layers
   var layersEl = document.getElementById('rp-layers');
   layersEl.innerHTML = '';
-  var layerNames = { perplexity: 'Perplexity Analysis', stylometry: 'Stylometric Fingerprint', transformer: 'Transformer Classifier', adversarial: 'Adversarial Detector' };
+  var layerNames = {
+    // Text
+    perplexity: 'Perplexity Analysis', stylometry: 'Stylometric Fingerprint',
+    transformer: 'Transformer Classifier', adversarial: 'Adversarial Detector',
+    // Image
+    efficientnet: 'EfficientNet-B4', vit: 'Vision Transformer (ViT)',
+    gan_fingerprint: 'GAN Fingerprint', fft_analysis: 'FFT Spectral Analysis',
+    texture: 'Texture Analysis', deep_score: 'Deep Ensemble',
+    handcrafted_score: 'Hand-Crafted Features',
+    // Audio
+    mel_cnn: 'Mel-Spectrogram CNN', resnet: 'ResNet-18 Classifier',
+    wav2vec2: 'Wav2Vec2 Transformer', spectral: 'Spectral Features',
+    // Video
+    xception: 'XceptionNet', temporal: 'Temporal Consistency',
+    artifact: 'Artifact Analysis', face_score: 'Face Analysis',
+    // Code
+    codebert: 'CodeBERT Classifier', ast: 'AST Pattern Analysis',
+  };
   if (data.layers) {
     Object.keys(data.layers).forEach(function(key) {
       var val = data.layers[key];
@@ -2515,7 +2536,7 @@ function showResult(data) {
    ═══════════════════════════════════════════════════════════ */
 /* ── Poll a job until completed/failed ── */
 async function pollJob(jobId) {
-  var maxAttempts = 60; // 2 minutes max
+  var maxAttempts = 200; // ~6m40s max (covers video 360s timeout with margin)
   for (var i = 0; i < maxAttempts; i++) {
     await new Promise(function(r) { setTimeout(r, 2000); });
     var res = await authFetch(CONFIG.BASE_URL + '/api/v1/jobs/' + jobId);
@@ -2605,7 +2626,7 @@ async function fetchAnalysis(type, content) {
 }
 
 async function runAnalysis(type) {
-  if (!isLoggedIn()) { openAuth('register'); return; }
+  // Auth is optional — demo works without login (uses demo user on backend)
   if (isRunning) return;
 
   // rate limit
@@ -2831,7 +2852,7 @@ function runUploadAnalysis() {
 }
 
 async function runMediaUploadAnalysis(mediaType) {
-  if (!isLoggedIn()) { openAuth('register'); return; }
+  // Auth is optional — demo works without login
   var file = uploadedFiles[mediaType];
   if (isRunning || !file) return;
 
