@@ -9,6 +9,7 @@ volumes:
   redis_data:
   minio_data:
   mlflow_data:
+  model_cache:
 
 services:
 
@@ -130,6 +131,7 @@ services:
     volumes:
       - ./backend:/app/app:ro
       - ./ai:/app/ai:ro
+      - model_cache:/models
     # Uncomment on machines with NVIDIA GPU:
     # deploy:
     #   resources:

@@ -35,3 +35,49 @@
 
 ### Next Step
 - Run `docker compose up -d --build backend worker` and verify
+
+## Session: 2026-04-11
+
+### Built
+- 3-stage Dockerfile.worker (base → deps → runtime)
+- Split requirements: `requirements/base.txt`, `ml.txt`, `dev.txt`
+- `.dockerignore` excluding .git, docs, tests, datasets, model files, memory
+- `model_cache` named volume for persistent HF model cache
+
+### Changed
+- `Dockerfile.worker`: complete rewrite — 3 stages, CPU-only PyTorch, no GPT-2 pre-download
+- `docker-compose.yml`: added `model_cache:` volume + mount on worker
+- `docker-compose.prod.yml`: same volume additions
+
+### Decisions
+- CPU-only PyTorch (CUDA torch wasted ~1.8GB in slim image with no GPU)
+- GPT-2 lazy-loads at runtime instead of baking into image
+- model_cache volume persists models across container restarts
+- requirements split: worker installs only base+ml, not dev tools
+
+### Risks Discovered
+- First text detection on fresh deploy has 5-10 min cold start (GPT-2 download)
+
+### Next Step
+- Run `docker compose build worker` to verify build and image size
+
+## Session: 2026-04-12
+
+### Built
+- 4-phase accuracy roadmap (text F1 0.60→0.90, image 0.50→0.80, audio 0.50→0.85)
+
+### Analysis Completed
+- Full code review of all detector layers (L1-L4 text, image ensemble, audio ensemble)
+- Identified _DevFallbackDetector as actual running text detector (not the real TextDetector)
+- Confirmed all training infrastructure exists but was never executed
+- Mapped exact checkpoint paths and loading code for each detector
+
+### Decisions
+- Phase 1 priority: activate real TextDetector (L1+L2 MVP mode) before any training
+- DeBERTa-v3-base (not -large) for Phase 2 — fits CPU worker, ~300ms inference
+- HC3 + RAID + OpenGPTText for text training data (~50K samples)
+- CIFAKE + GenImage subset for image training (~100K samples)
+- All model checkpoints go in model_cache volume, not Docker image
+
+### Next Step
+- Execute Phase 1A: fix `_get_detector()` in `text_worker.py` to import and use real TextDetector

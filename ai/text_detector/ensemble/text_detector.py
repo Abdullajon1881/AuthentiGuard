@@ -16,22 +16,27 @@ import structlog
 from ..layers.base import LayerResult
 from ..layers.layer1_perplexity import PerplexityLayer
 from ..layers.layer2_stylometry import StylometryLayer
-from ..layers.layer3_transformer import TransformerLayer
+from ..layers.layer3_semantic import SemanticLayer
 from ..layers.layer4_adversarial import AdversarialLayer
 from .meta_classifier import MetaClassifier, EnsembleResult, build_feature_vector
 
 log = structlog.get_logger(__name__)
 
-# Score thresholds per roadmap
-LABEL_THRESHOLDS = {
-    "AI":        (0.75, 1.00),
-    "UNCERTAIN": (0.40, 0.75),
-    "HUMAN":     (0.00, 0.40),
+# Score thresholds — adaptive based on number of active layers.
+# Fewer layers produce compressed score ranges, so thresholds tighten.
+_THRESHOLDS_BY_LAYERS = {
+    2: {"AI": (0.55, 1.00), "UNCERTAIN": (0.30, 0.55), "HUMAN": (0.00, 0.30)},
+    3: {"AI": (0.65, 1.00), "UNCERTAIN": (0.35, 0.65), "HUMAN": (0.00, 0.35)},
+    4: {"AI": (0.75, 1.00), "UNCERTAIN": (0.40, 0.75), "HUMAN": (0.00, 0.40)},
 }
 
+# Default for meta-classifier (already calibrated to full range)
+LABEL_THRESHOLDS = _THRESHOLDS_BY_LAYERS[4]
 
-def _score_to_label(score: float) -> str:
-    for label, (low, high) in LABEL_THRESHOLDS.items():
+
+def _score_to_label(score: float, active_layers: int = 4) -> str:
+    thresholds = _THRESHOLDS_BY_LAYERS.get(active_layers, LABEL_THRESHOLDS)
+    for label, (low, high) in thresholds.items():
         if low <= score < high:
             return label
     return "UNCERTAIN"
@@ -61,7 +66,7 @@ class TextDetector:
         self._layer2 = StylometryLayer(use_spacy=True)
         self._transformer_checkpoint = transformer_checkpoint
         self._adversarial_checkpoint = adversarial_checkpoint
-        self._layer3: TransformerLayer | None = None
+        self._layer3: SemanticLayer | None = None
         self._layer4: AdversarialLayer | None = None
         self._meta   = MetaClassifier()
         self._meta_checkpoint = meta_checkpoint
@@ -78,16 +83,17 @@ class TextDetector:
         self._layer2.load_model()
         self._active_layers = [0, 1]
 
-        # L3 (transformer) — only load if fine-tuned checkpoint exists
+        # L3 (semantic/transformer) — only load if fine-tuned checkpoint exists
         if self._transformer_checkpoint and self._transformer_checkpoint.exists():
-            self._layer3 = TransformerLayer(
+            self._layer3 = SemanticLayer(
                 checkpoint_path=self._transformer_checkpoint, device=self._device
             )
             self._layer3.load_model()
             self._active_layers.append(2)
-            log.info("layer3_transformer_loaded")
+            log.info("layer3_semantic_loaded", checkpoint=str(self._transformer_checkpoint))
         else:
-            log.warning("layer3_skipped — no fine-tuned checkpoint, would produce random output")
+            log.warning("layer3_skipped", reason="no fine-tuned checkpoint at "
+                        + str(self._transformer_checkpoint or "None"))
 
         # L4 (adversarial) — only load if fine-tuned checkpoint exists
         if self._adversarial_checkpoint and self._adversarial_checkpoint.exists():
@@ -161,7 +167,8 @@ class TextDetector:
             score = sum(s * w for s, w in zip(scores, weights))
             score = max(0.01, min(0.99, score))
 
-        label      = _score_to_label(score)
+        active_count = len(layer_results)
+        label      = _score_to_label(score, active_layers=active_count)
         confidence = _score_to_confidence(score)
 
         # ── Evidence summary for the UI ─────────────────────────

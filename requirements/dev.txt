@@ -1,0 +1,18 @@
+-r ml.txt
+
+# GPU inference
+onnxruntime-gpu==1.18.0
+
+# Experiment tracking
+mlflow==2.13.0
+wandb==0.17.0
+
+# Data versioning
+dvc==3.51.0
+dvc-s3==3.2.0
+
+# Training datasets
+datasets==2.19.0
+
+# Additional ML
+lightgbm==4.3.0

@@ -1,0 +1,35 @@
+-r base.txt
+
+# Core ML (torch installed separately via CPU index)
+transformers==4.41.0
+tokenizers==0.19.1
+accelerate==0.30.0
+
+# Classical ML
+scikit-learn==1.4.2
+xgboost==2.0.3
+scipy==1.13.0
+numpy==1.26.4
+
+# NLP
+spacy>=3.7.4,<4.0
+nltk==3.8.1
+sentencepiece==0.2.0
+
+# Audio
+librosa==0.10.2
+soundfile==0.12.1
+
+# Video & Image
+opencv-python-headless==4.9.0.80
+ffmpeg-python==0.2.0
+mediapipe==0.10.14
+pillow==10.3.0
+imageio==2.34.1
+
+# Model optimization (CPU only)
+onnx==1.16.0
+onnxruntime==1.18.0
+
+# Calibration
+netcal==1.3.5

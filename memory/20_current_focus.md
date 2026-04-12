@@ -1,37 +1,20 @@
 # Current Focus
 
-**Phase:** Production launch
-**Date:** 2026-04-10
+**Phase:** Detection accuracy improvement
+**Date:** 2026-04-12
 
 ## Status
-- All 8 implementation phases COMPLETED in code
-- Docker worker build BLOCKED (deps fixed, needs rebuild)
+- Docker optimization COMPLETE (3-stage build, CPU-only PyTorch, ~1.5GB image)
+- Accuracy roadmap DELIVERED (4-phase plan)
+- Current detection: text ~0.60 F1 (heuristic fallback), image/audio/video ~0.50 (untrained)
 
-## What Was Done This Session
-1. Enabled all 5 Celery queues in Dockerfile.worker
-2. DB tables created in all environments (not just dev)
-3. MinIO bucket auto-creation on startup
-4. Demo user seeded on startup for anonymous access
-5. OptionalCurrentUser on all analyze + job endpoints
-6. Removed auth gates from landing page JS
-7. Layer name mappings for all 5 content types
-8. Poll timeout: 2min → 5min
-9. CSP header: added Google Fonts
-10. Caddyfile: fixed routing, made domain configurable
-11. Deploy script created
-12. CI env vars fixed
-13. HF Space Gradio demo created
-14. Outreach template created
-15. Fixed libgl1-mesa-glx → libgl1 (Debian Trixie)
-16. Fixed spacy pin (loosened to >=3.7.4,<4.0)
-
-## Blocker
-- Docker `docker compose up --build backend worker` needs to run
-- Previous builds failed due to libgl1 and spacy issues (both fixed now)
-- Build takes ~10-15 min
+## Accuracy Roadmap Summary
+1. **Phase 1 (1-2 days):** Activate real TextDetector (L1+L2), tune thresholds → text F1 ~0.75-0.80
+2. **Phase 2 (3-5 days):** Fine-tune DeBERTa-v3-base on HC3/RAID/OpenGPTText → text F1 ~0.85-0.90
+3. **Phase 3 (2-3 weeks):** Fine-tune image (EfficientNet-B4 on CIFAKE/GenImage) + audio (Wav2Vec2 on ASVspoof) → image F1 0.80, audio F1 0.85
+4. **Phase 4 (1 week):** Benchmark suite, Platt calibration, CI integration
 
 ## Next Action
-1. Run `docker compose up -d --build backend worker`
-2. Verify landing page at http://localhost:8000
-3. Test text detection without login
-4. Test file uploads for image/audio/video
+1. Phase 1A: Fix `_get_detector()` in `text_worker.py` to use real TextDetector instead of _DevFallbackDetector
+2. Phase 1B: Run 200 samples through L1 perplexity, tune thresholds
+3. Phase 2A: Download HC3 + RAID datasets, prepare parquet files

@@ -1,0 +1,77 @@
+# Version control
+.git
+.github
+
+# Frontend (not needed by worker)
+node_modules
+frontend/.next
+frontend/out
+
+# Python artifacts
+__pycache__
+*.py[cod]
+*.egg-info
+.venv
+venv
+
+# ML model files (downloaded at runtime)
+*.pt
+*.pth
+*.pkl
+*.onnx
+*.bin
+*.ckpt
+model_cache/
+checkpoints/
+
+# Datasets
+datasets/
+
+# Development & docs
+docs/
+research/
+performance/
+notebooks/
+*.ipynb
+
+# Tests
+**/tests/
+**/*_test.py
+**/*test_*.py
+.pytest_cache
+htmlcov
+.coverage
+
+# Infrastructure & CI
+infra/
+.terraform/
+*.tfstate*
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# DVC
+.dvc/
+
+# Not needed by worker
+browser-extension/
+enterprise/
+authenticity-passport/
+hf_space/
+memory/
+
+# Gstack & Claude
+.gstack/
+.gstack-review/
+.claude/

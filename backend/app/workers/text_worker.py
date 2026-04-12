@@ -279,13 +279,14 @@ def _get_detector():
                 sys.path.insert(0, root)
             from ai.text_detector.ensemble.text_detector import TextDetector  # type: ignore
             _detector = TextDetector(
-                transformer_checkpoint=Path("ai/text_detector/checkpoints/transformer/phase3"),
-                adversarial_checkpoint=Path("ai/text_detector/checkpoints/adversarial/phase3"),
-                meta_checkpoint=Path("ai/text_detector/checkpoints/meta"),
+                transformer_checkpoint=None,   # L3 disabled until fine-tuned (Phase 2)
+                adversarial_checkpoint=None,    # L4 disabled until fine-tuned (Phase 2)
+                meta_checkpoint=None,           # meta disabled until L3/L4 trained
+                device="cpu",
             )
             _detector.load_models()
-            log.info("text_detector_loaded_in_worker")
-        except (ImportError, FileNotFoundError, OSError) as exc:
+            log.info("text_detector_loaded_in_worker", mode="L1+L2 MVP")
+        except Exception as exc:
             log.warning("text_detector_unavailable_using_dev_fallback", error=str(exc))
             _detector = _DevFallbackDetector()
     return _detector

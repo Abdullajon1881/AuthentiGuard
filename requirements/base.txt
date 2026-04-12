@@ -1,0 +1,6 @@
+# Shared runtime dependencies (worker + backend overlap)
+celery==5.4.0
+redis==5.0.4
+python-dotenv==1.0.1
+structlog==24.1.0
+tqdm==4.66.4

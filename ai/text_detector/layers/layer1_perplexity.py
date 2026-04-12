@@ -32,20 +32,22 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# GPT-2 perplexity calibration constants (empirically measured on held-out data)
-# Human text: mean ~120, std ~45
-# AI text:    mean ~35,  std ~18
-HUMAN_PPL_MEAN = 120.0
-HUMAN_PPL_STD  = 45.0
-AI_PPL_MEAN    = 35.0
-AI_PPL_STD     = 18.0
+# GPT-2 perplexity calibration constants (measured on 40-sample calibration set,
+# scripts/calibrate_perplexity.py, 2026-04-12)
+# Human text: mean ~85, std ~70, median ~69
+# AI text:    mean ~36, std ~16, median ~35
+HUMAN_PPL_MEAN = 85.0
+HUMAN_PPL_STD  = 70.0
+AI_PPL_MEAN    = 36.0
+AI_PPL_STD     = 16.0
 
 # Sentence perplexity below this threshold is flagged as "suspiciously fluent"
-LOW_PPL_THRESHOLD = 50.0
+# Midpoint of AI mean (36) and AI p75 (47)
+LOW_PPL_THRESHOLD = 42.0
 
 # Burstiness: human text has high variance in per-sentence perplexity
-# AI text is more uniform. Threshold separates the two distributions.
-LOW_BURSTINESS_THRESHOLD = 20.0
+# AI text is more uniform. Midpoint of AI mean (9.6) and human mean (63.6)
+LOW_BURSTINESS_THRESHOLD = 37.0
 
 MODEL_NAME = "gpt2"   # swap for "gpt2-medium" for higher accuracy at inference cost
 
@@ -154,15 +156,17 @@ class PerplexityLayer(BaseDetectionLayer):
         # Burstiness signal: low burstiness → AI
         burst_signal = 1.0 - min(burstiness / (HUMAN_PPL_STD * 2), 1.0)
 
-        # Combine: 60% mean perplexity, 30% burstiness, 10% low-ppl fraction
+        # Combine: 45% mean perplexity, 25% burstiness, 30% low-ppl fraction
+        # Weights based on Fisher discriminant ratios from calibration:
+        #   perplexity 0.685, burstiness 0.543, low_ppl_frac 1.042
         raw_score = (
-            0.60 * ppl_signal
-            + 0.30 * burst_signal
-            + 0.10 * low_ppl_frac
+            0.45 * ppl_signal
+            + 0.25 * burst_signal
+            + 0.30 * low_ppl_frac
         )
 
         # Map through sigmoid centered at 0.5 for smooth output
-        score = _sigmoid((raw_score - 0.5) * 6)
+        score = _sigmoid((raw_score - 0.5) * 8)
         score = max(0.01, min(0.99, score))
 
         # ── Build per-sentence scores ──────────────────────────

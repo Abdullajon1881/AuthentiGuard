@@ -4,7 +4,8 @@
 
 - **No fine-tuned checkpoints for any detector**
   - All 5 detectors fall back to pretrained weights or heuristics
-  - Text: works well via _DevFallbackDetector (10-signal heuristic)
+  - Text: _get_detector() tries real TextDetector (L1+L2 MVP) first, falls back to _DevFallbackDetector if imports fail
+  - Text L1+L2 MVP: adaptive thresholds now active (AI≥0.55 for 2 layers). 80% accuracy on 20-sample validation. Remaining misses: claude_professional text (0.28, lower perplexity variance than typical AI)
   - Image/audio/video: pretrained ImageNet/AudioSet weights don't detect AI content
   - Hand-crafted features (GAN fingerprint, FFT, spectral) provide real forensic signal
   - Code: CodeBERT pretrained + AST heuristics provide some signal
@@ -12,8 +13,9 @@
 - **Docker worker build fragile**
   - `libgl1-mesa-glx` removed in Debian Trixie → use `libgl1` (FIXED in code)
   - `spacy==3.7.4` conflicts with `fastapi-cli` typer dep → loosened to `>=3.7.4,<4.0` (FIXED)
-  - Build takes 10-15 min (PyTorch ~800MB + model downloads)
-  - Docker daemon can drop connection during large layer export
+  - Build takes 10-15 min (PyTorch ~800MB + model downloads) — MITIGATED: CPU-only torch ~200MB, .dockerignore, 3-stage cache
+  - Docker daemon can drop connection during large layer export — MITIGATED: smaller image (~1.5GB vs ~3.5GB)
+  - First text detection after fresh deploy takes 5-10 min (GPT-2 download to /models volume)
 
 ## Important (degrades experience)
 

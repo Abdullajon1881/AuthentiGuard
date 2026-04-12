@@ -18,6 +18,7 @@ volumes:
   minio_data:
   caddy_data:
   caddy_config:
+  model_cache:
 
 services:
 
@@ -145,6 +146,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    volumes:
+      - model_cache:/models
     networks:
       - authentiguard
     healthcheck:
