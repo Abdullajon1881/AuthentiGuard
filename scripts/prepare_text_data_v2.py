@@ -98,6 +98,335 @@ MIN_LEN = 80
 MAX_LEN = 2000
 
 
+# ── Adversarial text transforms ─────────────────────────────
+
+# Contractions for humanizing AI text
+CONTRACTIONS = [
+    ("do not", "don't"), ("does not", "doesn't"), ("did not", "didn't"),
+    ("is not", "isn't"), ("are not", "aren't"), ("was not", "wasn't"),
+    ("were not", "weren't"), ("have not", "haven't"), ("has not", "hasn't"),
+    ("will not", "won't"), ("would not", "wouldn't"), ("could not", "couldn't"),
+    ("should not", "shouldn't"), ("cannot", "can't"), ("can not", "can't"),
+    ("it is", "it's"), ("that is", "that's"), ("there is", "there's"),
+    ("I am", "I'm"), ("I have", "I've"), ("I will", "I'll"),
+    ("they are", "they're"), ("we are", "we're"), ("you are", "you're"),
+    ("they have", "they've"), ("we have", "we've"), ("you have", "you've"),
+    ("would have", "would've"), ("could have", "could've"),
+    ("should have", "should've"), ("let us", "let's"),
+]
+
+# Filler words/phrases to inject for humanizing
+FILLERS = [
+    "honestly, ", "basically, ", "like, ", "I mean, ", "you know, ",
+    "actually, ", "I think ", "kind of ", "sort of ", "pretty much ",
+    "to be honest, ", "well, ", "anyway, ", "so yeah, ",
+]
+
+# Common typos (letter swaps, missing letters)
+TYPO_MAP = {
+    "the": ["teh", "hte", "th"],
+    "that": ["taht", "tht"],
+    "with": ["wiht", "wth"],
+    "have": ["hav", "ahve"],
+    "this": ["thsi", "tihs"],
+    "they": ["tehy", "thye"],
+    "their": ["thier", "ther"],
+    "from": ["form", "fom"],
+    "because": ["becuase", "becasue", "bc"],
+    "would": ["woud", "wuold"],
+    "about": ["abuot", "abut"],
+    "people": ["poeple", "peple"],
+    "which": ["whcih", "wich"],
+    "something": ["somthing", "smth"],
+    "really": ["realy", "rly"],
+}
+
+# Formal transition words for AI-ifying human text
+FORMAL_TRANSITIONS = [
+    "Furthermore, ", "Moreover, ", "Additionally, ", "In addition, ",
+    "Consequently, ", "Subsequently, ", "Nevertheless, ", "Nonetheless, ",
+    "It is worth noting that ", "It should be emphasized that ",
+    "From this perspective, ", "In this regard, ",
+]
+
+# Formal vocabulary upgrades
+FORMAL_UPGRADES = [
+    ("big", "substantial"), ("small", "minimal"), ("good", "beneficial"),
+    ("bad", "detrimental"), ("show", "demonstrate"), ("use", "utilize"),
+    ("help", "facilitate"), ("get", "obtain"), ("give", "provide"),
+    ("need", "require"), ("start", "commence"), ("end", "conclude"),
+    ("think", "consider"), ("try", "attempt"), ("make", "construct"),
+    ("important", "significant"), ("a lot", "a substantial amount"),
+    ("hard", "challenging"), ("easy", "straightforward"),
+]
+
+
+def humanize_ai_text(text: str) -> str:
+    """Transform AI text to look more human: contractions, fillers, typos.
+    Label stays AI (1) — forces model to not rely on surface informality."""
+    # Apply contractions (60% chance each)
+    for formal, contracted in CONTRACTIONS:
+        if formal.lower() in text.lower() and random.random() < 0.6:
+            text = re.sub(re.escape(formal), contracted, text, count=1, flags=re.IGNORECASE)
+
+    # Insert 1-3 filler words at sentence boundaries
+    sentences = text.split(". ")
+    if len(sentences) < 2:
+        return text
+    n_fillers = random.randint(1, min(3, len(sentences) - 1))
+    filler_positions = random.sample(range(min(len(sentences), 20)), min(n_fillers, len(sentences)))
+    for pos in sorted(filler_positions, reverse=True):
+        if pos < len(sentences):
+            filler = random.choice(FILLERS)
+            # Lowercase the start of the sentence after filler
+            s = sentences[pos]
+            if s and s[0].isupper():
+                s = s[0].lower() + s[1:]
+            sentences[pos] = filler + s
+    text = ". ".join(sentences)
+
+    # Add 1-3 typos (only in common words)
+    n_typos = random.randint(1, 3)
+    words = text.split()
+    typo_candidates = [(i, w.lower().strip(".,!?;:")) for i, w in enumerate(words)
+                       if w.lower().strip(".,!?;:") in TYPO_MAP]
+    if typo_candidates:
+        for i, clean_word in random.sample(typo_candidates, min(n_typos, len(typo_candidates))):
+            replacement = random.choice(TYPO_MAP[clean_word])
+            # Preserve trailing punctuation
+            original = words[i]
+            trailing = ""
+            while original and original[-1] in ".,!?;:":
+                trailing = original[-1] + trailing
+                original = original[:-1]
+            words[i] = replacement + trailing
+        text = " ".join(words)
+
+    # Occasionally add casual endings
+    if random.random() < 0.3:
+        endings = [" lol", " haha", " tbh", "...", " anyway"]
+        text = text.rstrip(".") + random.choice(endings)
+
+    return text
+
+
+def ai_ify_human_text(text: str) -> str:
+    """Transform human text to look more AI-like: formal, structured, polished.
+    Label stays human (0) — forces model to not rely on surface formality."""
+    # Expand contractions
+    for formal, contracted in CONTRACTIONS:
+        if contracted.lower() in text.lower():
+            text = re.sub(re.escape(contracted), formal, text, count=2, flags=re.IGNORECASE)
+
+    # Insert formal transitions at sentence boundaries
+    sentences = text.split(". ")
+    if len(sentences) > 3:
+        n_transitions = random.randint(1, min(3, len(sentences) // 3))
+        positions = random.sample(range(1, len(sentences)), min(n_transitions, len(sentences) - 1))
+        for pos in sorted(positions, reverse=True):
+            transition = random.choice(FORMAL_TRANSITIONS)
+            s = sentences[pos]
+            if s and s[0].isupper():
+                s = s[0].lower() + s[1:]
+            sentences[pos] = transition + s
+        text = ". ".join(sentences)
+
+    # Upgrade casual vocabulary to formal
+    for casual, formal in FORMAL_UPGRADES:
+        if random.random() < 0.4:
+            text = re.sub(r"\b" + re.escape(casual) + r"\b", formal, text,
+                         count=1, flags=re.IGNORECASE)
+
+    # Remove informal markers
+    text = re.sub(r"\b(lol|haha|lmao|tbh|ngl|idk|omg)\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\.{2,}", ".", text)  # ... → .
+    text = re.sub(r"!{2,}", ".", text)   # !! → .
+    text = re.sub(r"\?{2,}", "?", text)  # ?? → ?
+
+    # Add concluding phrase if text doesn't end with one
+    if random.random() < 0.3:
+        conclusions = [
+            " In conclusion, this demonstrates the complexity of the topic.",
+            " Overall, these factors contribute to a nuanced understanding.",
+            " This analysis highlights the multifaceted nature of the subject.",
+        ]
+        text = text.rstrip(".") + "." + random.choice(conclusions)
+
+    return text
+
+
+def create_mixed_sample(text_a: str, text_b: str) -> str:
+    """Concatenate first half of text_a with second half of text_b.
+    The label follows text_a (the dominant/first portion)."""
+    # Split at sentence boundaries near the midpoint
+    mid_a = len(text_a) // 2
+    # Find nearest sentence boundary in text_a
+    period_pos = text_a.find(". ", mid_a)
+    if period_pos != -1 and period_pos < mid_a + 200:
+        first_half = text_a[:period_pos + 1]
+    else:
+        first_half = text_a[:mid_a]
+
+    mid_b = len(text_b) // 2
+    period_pos = text_b.find(". ", mid_b)
+    if period_pos != -1 and period_pos < mid_b + 200:
+        second_half = text_b[period_pos + 2:]
+    else:
+        second_half = text_b[mid_b:]
+
+    return first_half.rstrip() + " " + second_half.lstrip()
+
+
+# ── Hard negative loaders ────────────────────────────────────
+
+def load_hard_negatives_human_formal(cap: int) -> list[dict]:
+    """Highly polished human writing — encyclopedia articles.
+    These look AI-like due to structure and formality."""
+    from datasets import load_dataset
+
+    print(f"  [HN-1] Polished human writing (cap={cap})...")
+    rows = []
+
+    # Use wikimedia/wikipedia (updated, no legacy scripts)
+    try:
+        ds = load_dataset("wikimedia/wikipedia", "20231101.en",
+                          split="train", streaming=True)
+    except Exception as e:
+        print(f"    Wikipedia dataset failed: {e}")
+        print("    Falling back to SQuAD for additional formal human text...")
+        # Fallback: more SQuAD passages with higher length threshold
+        ds = load_dataset("squad", split="validation", streaming=True)
+        seen = set()
+        for row in ds:
+            if len(rows) >= cap:
+                break
+            text = normalize_text(row.get("context", ""))
+            h = hashlib.md5(text.encode()).hexdigest()
+            if h in seen or len(text) < 500:
+                continue
+            seen.add(h)
+            if valid_text(text):
+                rows.append({
+                    "text": truncate(text),
+                    "label": 0,
+                    "source": "wiki_formal",
+                    "tone": "formal",
+                })
+        print(f"    Got {len(rows)} polished human samples (fallback)")
+        return rows
+
+    count = 0
+    for row in ds:
+        if len(rows) >= cap:
+            break
+        text = normalize_text(row.get("text", ""))
+        # Only keep longer, well-structured articles (polished writing)
+        if len(text) < 1000:
+            continue
+        if not valid_text(text):
+            continue
+        rows.append({
+            "text": truncate(text),
+            "label": 0,
+            "source": "wiki_formal",
+            "tone": "formal",
+        })
+        count += 1
+        if count % 500 == 0:
+            print(f"      {count} formal human...")
+
+    print(f"    Got {len(rows)} polished human samples")
+    return rows
+
+
+def load_hard_negatives_ai_casual(cap: int) -> list[dict]:
+    """AI text that's deliberately casual/conversational.
+    Uses artem9k AI samples that tend to be informal."""
+    from datasets import load_dataset
+
+    print(f"  [HN-2] Casual/structured AI text (cap={cap})...")
+    ds = load_dataset("artem9k/ai-text-detection-pile", split="train", streaming=True)
+
+    rows = []
+    skipped = 0
+    for row in ds:
+        if len(rows) >= cap:
+            break
+        source_field = row.get("source", "")
+        if source_field == "human":
+            skipped += 1
+            continue
+
+        text = normalize_text(row.get("text", ""))
+        if not valid_text(text) or len(text) < 300:
+            continue
+
+        tone = classify_tone(text)
+        # Prioritize non-medium tones (casual or formal AI)
+        if tone == "medium" and random.random() < 0.7:
+            continue
+
+        rows.append({
+            "text": truncate(text),
+            "label": 1,
+            "source": "artem9k_hn",
+            "tone": tone,
+        })
+        if len(rows) % 500 == 0:
+            print(f"      {len(rows)} casual/structured AI...")
+
+    print(f"    Got {len(rows)} hard negative AI samples")
+    return rows
+
+
+def load_human_casual_extra(cap: int) -> list[dict]:
+    """Extra casual/informal human writing from diverse sources."""
+    from datasets import load_dataset
+
+    print(f"  [HN-3] Extra casual human writing (cap={cap})...")
+    rows = []
+
+    # Use Amazon reviews — real casual human writing
+    try:
+        ds = load_dataset("McAuley-Lab/Amazon-Reviews-2023",
+                          "raw_review_All_Beauty",
+                          split="full", streaming=True)
+        for row in ds:
+            if len(rows) >= cap:
+                break
+            text = normalize_text(row.get("text", ""))
+            if valid_text(text) and len(text) >= 200:
+                rows.append({
+                    "text": truncate(text),
+                    "label": 0,
+                    "source": "reviews",
+                    "tone": "casual",
+                })
+            if len(rows) % 500 == 0 and len(rows) > 0:
+                print(f"      {len(rows)} casual human...")
+    except Exception as e:
+        print(f"    Amazon reviews failed: {e}")
+        # Fallback: use more aeslc emails
+        try:
+            ds = load_dataset("aeslc", split="validation", streaming=True)
+            for row in ds:
+                if len(rows) >= cap:
+                    break
+                text = normalize_text(row.get("email_body", ""))
+                if valid_text(text) and len(text) >= 150:
+                    rows.append({
+                        "text": truncate(text),
+                        "label": 0,
+                        "source": "email_extra",
+                        "tone": "casual",
+                    })
+        except Exception:
+            pass
+
+    print(f"    Got {len(rows)} casual human samples")
+    return rows
+
+
 def valid_text(text: str) -> bool:
     """Check if text is usable."""
     if not text or len(text.strip()) < MIN_LEN:
@@ -357,6 +686,73 @@ def main():
     # Source 5: Wiki passages (formal human)
     all_rows.extend(load_wiki_as_human(cap=3000))
 
+    # ── Hard negatives ────────────────────────────────────────
+    print(f"\n--- HARD NEGATIVES ---")
+    all_rows.extend(load_hard_negatives_human_formal(cap=2000))
+    all_rows.extend(load_hard_negatives_ai_casual(cap=2000))
+    all_rows.extend(load_human_casual_extra(cap=2000))
+
+    # ── Adversarial augmentation (10-20% of dataset) ──────────
+    print(f"\n--- ADVERSARIAL AUGMENTATION ---")
+    # Separate base samples by label for augmentation
+    base_human = [r for r in all_rows if r["label"] == 0]
+    base_ai = [r for r in all_rows if r["label"] == 1]
+
+    adv_target = int(len(all_rows) * 0.15)  # 15% adversarial
+    adv_per_type = adv_target // 3  # split across 3 adversarial types
+
+    adv_rows = []
+
+    # Type 1: AI text humanized (label stays 1)
+    print(f"  Generating {adv_per_type} humanized-AI samples...")
+    ai_pool = random.sample(base_ai, min(adv_per_type, len(base_ai)))
+    for row in ai_pool:
+        new_text = humanize_ai_text(row["text"])
+        if valid_text(new_text):
+            adv_rows.append({
+                "text": new_text,
+                "label": 1,  # still AI
+                "source": "adv_humanized_ai",
+                "tone": classify_tone(new_text),
+            })
+
+    # Type 2: Human text AI-ified (label stays 0)
+    print(f"  Generating {adv_per_type} AI-ified-human samples...")
+    human_pool = random.sample(base_human, min(adv_per_type, len(base_human)))
+    for row in human_pool:
+        new_text = ai_ify_human_text(row["text"])
+        if valid_text(new_text):
+            adv_rows.append({
+                "text": new_text,
+                "label": 0,  # still human
+                "source": "adv_aiified_human",
+                "tone": classify_tone(new_text),
+            })
+
+    # Type 3: Mixed samples (50% human + 50% AI, label follows first half)
+    print(f"  Generating {adv_per_type} mixed samples...")
+    n_mixed = min(adv_per_type, len(base_human), len(base_ai))
+    mixed_humans = random.sample(base_human, n_mixed)
+    mixed_ais = random.sample(base_ai, n_mixed)
+    for h_row, a_row in zip(mixed_humans, mixed_ais):
+        # Half the time: human-first (label=0), half: AI-first (label=1)
+        if random.random() < 0.5:
+            mixed_text = create_mixed_sample(h_row["text"], a_row["text"])
+            label = 0  # follows first half (human)
+        else:
+            mixed_text = create_mixed_sample(a_row["text"], h_row["text"])
+            label = 1  # follows first half (AI)
+        if valid_text(mixed_text):
+            adv_rows.append({
+                "text": mixed_text,
+                "label": label,
+                "source": "adv_mixed",
+                "tone": classify_tone(mixed_text),
+            })
+
+    print(f"  Total adversarial samples: {len(adv_rows)}")
+    all_rows.extend(adv_rows)
+
     # ── Deduplicate ────────────────────────────────────────────
     print(f"\nTotal raw rows: {len(all_rows)}")
     seen_hashes = set()
@@ -536,6 +932,50 @@ def main():
     for _, row in train_df[train_df["label"] == 1].sample(10, random_state=99).iterrows():
         preview = row['text'][:100].encode('ascii', 'replace').decode()
         print(f"  [{row['source']:<10s}] [{row['tone']:<7s}] {preview}")
+
+    # Show adversarial samples specifically
+    adv_sources = ["adv_humanized_ai", "adv_aiified_human", "adv_mixed"]
+    adv_df = train_df[train_df["source"].isin(adv_sources)]
+    if len(adv_df) > 0:
+        print(f"\n{'='*80}")
+        print(f"VALIDATION: Adversarial samples ({len(adv_df)} in train)")
+        print("=" * 80)
+        for src in adv_sources:
+            sub = adv_df[adv_df["source"] == src]
+            if len(sub) > 0:
+                n_show = min(3, len(sub))
+                for _, row in sub.sample(n_show, random_state=99).iterrows():
+                    lbl = "HUMAN" if row["label"] == 0 else "AI"
+                    preview = row['text'][:100].encode('ascii', 'replace').decode()
+                    print(f"  [{row['source']:<20s}] [label={lbl:<5s}] {preview}")
+
+    # Show hard negative samples
+    hn_sources = ["wiki_formal", "artem9k_hn", "eli5"]
+    hn_df = train_df[train_df["source"].isin(hn_sources)]
+    if len(hn_df) > 0:
+        print(f"\n{'='*80}")
+        print(f"VALIDATION: Hard negative samples ({len(hn_df)} in train)")
+        print("=" * 80)
+        for src in hn_sources:
+            sub = hn_df[hn_df["source"] == src]
+            if len(sub) > 0:
+                n_show = min(3, len(sub))
+                for _, row in sub.sample(n_show, random_state=99).iterrows():
+                    lbl = "HUMAN" if row["label"] == 0 else "AI"
+                    preview = row['text'][:100].encode('ascii', 'replace').decode()
+                    print(f"  [{row['source']:<20s}] [label={lbl:<5s}] [{row['tone']:<7s}] {preview}")
+
+    # Final summary
+    total = len(train_df) + len(val_df) + len(test_df)
+    adv_total = len(df[df["source"].isin(adv_sources)])
+    hn_total = len(df[df["source"].isin(hn_sources)])
+    print(f"\n{'='*80}")
+    print(f"DATASET V2 SUMMARY")
+    print(f"{'='*80}")
+    print(f"  Total samples:       {total}")
+    print(f"  Adversarial samples: {adv_total} ({adv_total/total*100:.1f}%)")
+    print(f"  Hard negatives:      {hn_total} ({hn_total/total*100:.1f}%)")
+    print(f"  Base samples:        {total - adv_total - hn_total} ({(total - adv_total - hn_total)/total*100:.1f}%)")
 
 
 if __name__ == "__main__":
