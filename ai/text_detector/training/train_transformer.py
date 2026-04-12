@@ -19,7 +19,6 @@ Tracks all runs in MLflow. Applies calibration gate before saving.
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 from typing import Any
 
@@ -79,7 +78,6 @@ def train_phase(
 
     Returns the checkpoint directory path.
     """
-    import mlflow
     import torch
     from transformers import (  # type: ignore
         AutoTokenizer,
@@ -152,18 +150,17 @@ def train_phase(
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size * 2,
         learning_rate=lr,
-        warmup_ratio=warmup_ratio,
+        warmup_steps=int((len(train_ds) / batch_size) * epochs * warmup_ratio),
         weight_decay=0.01,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="f1",
         greater_is_better=True,
         logging_steps=50,
-        fp16=torch.cuda.is_available(),
-        dataloader_num_workers=4,
-        report_to="mlflow",
-        run_name=f"text-detector-phase{phase}",
+        bf16=torch.cuda.is_available() and torch.cuda.is_bf16_supported(),
+        dataloader_num_workers=0,  # 0 for Windows compatibility
+        report_to="none",
     )
 
     # ── Metrics ────────────────────────────────────────────────
@@ -183,29 +180,15 @@ def train_phase(
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=DataCollatorWithPadding(tokenizer),
         compute_metrics=compute_metrics,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
 
-    with mlflow.start_run(run_name=f"phase{phase}"):
-        mlflow.log_params({
-            "phase": phase,
-            "model": model_name,
-            "learning_rate": lr,
-            "epochs": epochs,
-            "batch_size": batch_size,
-        })
-
-        trainer.train()
-        eval_results = trainer.evaluate()
-
-        mlflow.log_metrics({
-            k: v for k, v in eval_results.items() if isinstance(v, float)
-        })
-
-        log.info("phase_complete", phase=phase, metrics=eval_results)
+    trainer.train()
+    eval_results = trainer.evaluate()
+    log.info("phase_complete", phase=phase, metrics=eval_results)
 
     # Save final checkpoint
     trainer.save_model(str(phase_output))
@@ -218,13 +201,11 @@ def main() -> None:
     parser.add_argument("--phase", type=int, choices=[1, 2, 3], required=True)
     parser.add_argument("--data-dir", type=Path, default=Path("datasets/processed"))
     parser.add_argument("--output-dir", type=Path, default=Path("ai/text_detector/checkpoints/transformer"))
-    parser.add_argument("--model", default="microsoft/deberta-v3-base")
+    parser.add_argument("--model", default="microsoft/deberta-v3-small")
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=None)
     args = parser.parse_args()
-
-    os.environ.setdefault("MLFLOW_TRACKING_URI", "http://localhost:5000")
 
     checkpoint = train_phase(
         phase=args.phase,

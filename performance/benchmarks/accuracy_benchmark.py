@@ -294,3 +294,87 @@ def run_accuracy_benchmarks_on_synthetic() -> list[AccuracyReport]:
         print_accuracy_report(report)
 
     return reports
+
+
+def run_text_detector_benchmark(
+    test_parquet: Path,
+    transformer_checkpoint: Path | None = None,
+    max_samples: int = 500,
+) -> AccuracyReport:
+    """
+    Run TextDetector on real test data and produce an accuracy report.
+
+    Args:
+        test_parquet: Path to test.parquet with columns [text, label]
+        transformer_checkpoint: Path to fine-tuned L3 checkpoint (None = L1+L2 only)
+        max_samples: Cap samples to keep runtime reasonable on CPU
+    """
+    import sys
+    import pandas as pd
+
+    root = Path(__file__).resolve().parent.parent.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+
+    from ai.text_detector.ensemble.text_detector import TextDetector
+
+    df = pd.read_parquet(test_parquet)[["text", "label"]]
+    if len(df) > max_samples:
+        df = df.sample(max_samples, random_state=42)
+
+    detector = TextDetector(
+        transformer_checkpoint=str(transformer_checkpoint) if transformer_checkpoint else None,
+        adversarial_checkpoint=None,
+        meta_checkpoint=None,
+        device="cpu",
+    )
+    detector.load_models()
+
+    y_true = df["label"].values.astype(int)
+    y_scores = np.zeros(len(df), dtype=np.float32)
+
+    log.info("benchmark_start", n_samples=len(df),
+             mode="L1+L2+L3" if transformer_checkpoint else "L1+L2")
+
+    for i, text in enumerate(df["text"].values):
+        try:
+            result = detector.analyze(text)
+            y_scores[i] = result.score
+        except Exception as e:
+            log.warning("sample_failed", index=i, error=str(e))
+            y_scores[i] = 0.5  # uncertain fallback
+
+        if (i + 1) % 50 == 0:
+            print(f"  [{i+1}/{len(df)}] processed...")
+
+    # Use adaptive thresholds based on active layers
+    active_layers = 2
+    if transformer_checkpoint:
+        active_layers = 3
+    thresholds = {2: (0.55, 0.30), 3: (0.65, 0.35), 4: (0.75, 0.40)}
+    ai_thr, human_thr = thresholds.get(active_layers, (0.75, 0.40))
+
+    report = compute_accuracy_report("text", y_true, y_scores, ai_thr, human_thr)
+    print_accuracy_report(report)
+    return report
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["synthetic", "real"], default="synthetic")
+    parser.add_argument("--test-data", type=Path, default=Path("datasets/processed/test.parquet"))
+    parser.add_argument("--checkpoint", type=Path, default=None,
+                        help="Path to L3 transformer checkpoint dir")
+    parser.add_argument("--max-samples", type=int, default=500)
+    args = parser.parse_args()
+
+    if args.mode == "synthetic":
+        run_accuracy_benchmarks_on_synthetic()
+    else:
+        run_text_detector_benchmark(
+            test_parquet=args.test_data,
+            transformer_checkpoint=args.checkpoint,
+            max_samples=args.max_samples,
+        )
