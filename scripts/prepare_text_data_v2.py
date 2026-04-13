@@ -162,38 +162,38 @@ FORMAL_UPGRADES = [
 
 
 def humanize_ai_text(text: str) -> str:
-    """Transform AI text to look more human: contractions, fillers, typos.
+    """Transform AI text to look more human: contractions, fillers, typos,
+    inconsistent grammar, sentence fragments, topic drift, emotional tone,
+    and redundancy.
     Label stays AI (1) — forces model to not rely on surface informality."""
-    # Apply contractions (60% chance each)
+    # Apply contractions (70% chance each — aggressive)
     for formal, contracted in CONTRACTIONS:
-        if formal.lower() in text.lower() and random.random() < 0.6:
-            text = re.sub(re.escape(formal), contracted, text, count=1, flags=re.IGNORECASE)
+        if formal.lower() in text.lower() and random.random() < 0.7:
+            text = re.sub(re.escape(formal), contracted, text, count=2, flags=re.IGNORECASE)
 
-    # Insert 1-3 filler words at sentence boundaries
+    # Insert filler words at sentence boundaries
     sentences = text.split(". ")
-    if len(sentences) < 2:
+    if len(sentences) < 3:
         return text
-    n_fillers = random.randint(1, min(3, len(sentences) - 1))
+    n_fillers = random.randint(1, min(5, len(sentences) - 1))
     filler_positions = random.sample(range(min(len(sentences), 20)), min(n_fillers, len(sentences)))
     for pos in sorted(filler_positions, reverse=True):
         if pos < len(sentences):
             filler = random.choice(FILLERS)
-            # Lowercase the start of the sentence after filler
             s = sentences[pos]
             if s and s[0].isupper():
                 s = s[0].lower() + s[1:]
             sentences[pos] = filler + s
     text = ". ".join(sentences)
 
-    # Add 1-3 typos (only in common words)
-    n_typos = random.randint(1, 3)
+    # Add typos (2-5)
+    n_typos = random.randint(2, 5)
     words = text.split()
     typo_candidates = [(i, w.lower().strip(".,!?;:")) for i, w in enumerate(words)
                        if w.lower().strip(".,!?;:") in TYPO_MAP]
     if typo_candidates:
         for i, clean_word in random.sample(typo_candidates, min(n_typos, len(typo_candidates))):
             replacement = random.choice(TYPO_MAP[clean_word])
-            # Preserve trailing punctuation
             original = words[i]
             trailing = ""
             while original and original[-1] in ".,!?;:":
@@ -202,26 +202,91 @@ def humanize_ai_text(text: str) -> str:
             words[i] = replacement + trailing
         text = " ".join(words)
 
-    # Occasionally add casual endings
+    # ── NEW: Inconsistent grammar ──
+    if random.random() < 0.5:
+        # Random subject-verb disagreement
+        text = re.sub(r"\bhe is\b", "he are", text, count=1)
+        text = re.sub(r"\bthey has\b", "they have", text, count=1)
+
+    # ── NEW: Sentence fragments ──
+    if random.random() < 0.5:
+        sentences = text.split(". ")
+        if len(sentences) > 3:
+            idx = random.randint(1, len(sentences) - 2)
+            fragments = [
+                "Which is crazy", "Not sure about that though",
+                "Or maybe not", "Just my take", "Idk really",
+                "Wild stuff honestly", "But yeah", "So there's that",
+            ]
+            sentences.insert(idx, random.choice(fragments))
+            text = ". ".join(sentences)
+
+    # ── NEW: Topic drift — insert tangential aside ──
+    if random.random() < 0.4:
+        asides = [
+            " (reminds me of when I was in college tbh)",
+            " - kind of like that one time at work lol",
+            " which is funny because my friend was just talking about this",
+            " (sorry, got sidetracked for a sec)",
+            " -- anyway where was I",
+            " not gonna lie this reminds me of something else entirely",
+        ]
+        sentences = text.split(". ")
+        if len(sentences) > 2:
+            pos = random.randint(1, len(sentences) - 1)
+            sentences[pos] = sentences[pos] + random.choice(asides)
+            text = ". ".join(sentences)
+
+    # ── NEW: Emotional tone injection ──
+    if random.random() < 0.5:
+        emotions = [
+            "honestly this is so frustrating. ",
+            "I love this part. ",
+            "ugh. ",
+            "this blew my mind. ",
+            "can't believe I didn't know this before. ",
+            "ok this is actually cool. ",
+        ]
+        sentences = text.split(". ")
+        pos = random.randint(0, max(0, len(sentences) - 2))
+        sentences.insert(pos, random.choice(emotions).rstrip(". "))
+        text = ". ".join(sentences)
+
+    # ── NEW: Redundancy (repeat a phrase) ──
     if random.random() < 0.3:
-        endings = [" lol", " haha", " tbh", "...", " anyway"]
+        sentences = text.split(". ")
+        if len(sentences) > 3:
+            repeat_idx = random.randint(0, len(sentences) - 2)
+            rephrasings = [
+                f"like I said, {sentences[repeat_idx].lower().strip()}",
+                f"again, {sentences[repeat_idx].lower().strip()}",
+                f"basically what I mean is {sentences[repeat_idx].lower().strip()}",
+            ]
+            sentences.insert(repeat_idx + 1, random.choice(rephrasings))
+            text = ". ".join(sentences)
+
+    # Casual endings (50% chance — higher than before)
+    if random.random() < 0.5:
+        endings = [" lol", " haha", " tbh", "...", " anyway", " idk",
+                   " but whatever", " so yeah", " just saying"]
         text = text.rstrip(".") + random.choice(endings)
 
     return text
 
 
 def ai_ify_human_text(text: str) -> str:
-    """Transform human text to look more AI-like: formal, structured, polished.
+    """Transform human text to look more AI-like: overly structured reasoning,
+    step-by-step logic, repetitive phrasing, formal vocabulary.
     Label stays human (0) — forces model to not rely on surface formality."""
     # Expand contractions
     for formal, contracted in CONTRACTIONS:
         if contracted.lower() in text.lower():
-            text = re.sub(re.escape(contracted), formal, text, count=2, flags=re.IGNORECASE)
+            text = re.sub(re.escape(contracted), formal, text, count=3, flags=re.IGNORECASE)
 
     # Insert formal transitions at sentence boundaries
     sentences = text.split(". ")
     if len(sentences) > 3:
-        n_transitions = random.randint(1, min(3, len(sentences) // 3))
+        n_transitions = random.randint(2, min(4, len(sentences) // 2))
         positions = random.sample(range(1, len(sentences)), min(n_transitions, len(sentences) - 1))
         for pos in sorted(positions, reverse=True):
             transition = random.choice(FORMAL_TRANSITIONS)
@@ -231,24 +296,68 @@ def ai_ify_human_text(text: str) -> str:
             sentences[pos] = transition + s
         text = ". ".join(sentences)
 
-    # Upgrade casual vocabulary to formal
+    # Upgrade casual vocabulary to formal (more aggressive)
     for casual, formal in FORMAL_UPGRADES:
-        if random.random() < 0.4:
+        if random.random() < 0.6:
             text = re.sub(r"\b" + re.escape(casual) + r"\b", formal, text,
-                         count=1, flags=re.IGNORECASE)
+                         count=2, flags=re.IGNORECASE)
 
     # Remove informal markers
     text = re.sub(r"\b(lol|haha|lmao|tbh|ngl|idk|omg)\b", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\.{2,}", ".", text)  # ... → .
-    text = re.sub(r"!{2,}", ".", text)   # !! → .
-    text = re.sub(r"\?{2,}", "?", text)  # ?? → ?
+    text = re.sub(r"\.{2,}", ".", text)
+    text = re.sub(r"!{2,}", ".", text)
+    text = re.sub(r"\?{2,}", "?", text)
 
-    # Add concluding phrase if text doesn't end with one
+    # ── NEW: Step-by-step logic injection ──
+    if random.random() < 0.4:
+        sentences = text.split(". ")
+        if len(sentences) > 4:
+            # Add numbered structure to a few sentences
+            step_start = random.randint(1, min(3, len(sentences) - 3))
+            for i, step_num in enumerate(range(step_start, min(step_start + 3, len(sentences)))):
+                s = sentences[step_num].strip()
+                if s:
+                    sentences[step_num] = f"Step {i+1}: {s}"
+            text = ". ".join(sentences)
+
+    # ── NEW: Repetitive phrasing (AI hallmark) ──
+    if random.random() < 0.5:
+        repetitive_starters = [
+            "It is important to note that ",
+            "It is worth mentioning that ",
+            "One key aspect is that ",
+            "A significant factor is that ",
+            "It is essential to understand that ",
+        ]
+        sentences = text.split(". ")
+        if len(sentences) > 3:
+            n_reps = random.randint(1, min(2, len(sentences) // 3))
+            rep_positions = random.sample(range(1, len(sentences)), min(n_reps, len(sentences) - 1))
+            starter = random.choice(repetitive_starters)  # same starter = repetitive
+            for pos in sorted(rep_positions, reverse=True):
+                s = sentences[pos].strip()
+                if s and s[0].isupper():
+                    s = s[0].lower() + s[1:]
+                sentences[pos] = starter + s
+            text = ". ".join(sentences)
+
+    # ── NEW: Overly structured reasoning ──
     if random.random() < 0.3:
+        structured_intros = [
+            "There are several key points to consider here. ",
+            "This can be understood through multiple lenses. ",
+            "To fully appreciate this, we must examine several factors. ",
+        ]
+        text = random.choice(structured_intros) + text
+
+    # Add concluding phrase (higher chance)
+    if random.random() < 0.5:
         conclusions = [
             " In conclusion, this demonstrates the complexity of the topic.",
             " Overall, these factors contribute to a nuanced understanding.",
             " This analysis highlights the multifaceted nature of the subject.",
+            " In summary, the evidence suggests a comprehensive perspective is necessary.",
+            " Ultimately, this underscores the importance of careful consideration.",
         ]
         text = text.rstrip(".") + "." + random.choice(conclusions)
 
@@ -826,14 +935,29 @@ def main():
         print(f"  Post-crop dedup: removed {pre_dedup - post_dedup}")
 
     # ── Tone reclassification ───────────────────────────────────
-    # Reclassify tone after cropping (segments may differ from full text)
     df["tone"] = df["text"].apply(classify_tone)
 
-    # Note: We do NOT aggressively balance tones. The main anti-artifact
-    # defense is multi-source data + same-topic pairs + length normalization.
-    # Tone is tracked for monitoring, not used as a hard balancing criterion,
-    # because casual AI text is naturally rare and forcing balance would
-    # destroy dataset size.
+    # ── Tag sample types + weights ─────────────────────────────
+    ADV_SOURCES = {"adv_humanized_ai", "adv_aiified_human", "adv_mixed"}
+    HN_SOURCES = {"wiki_formal", "artem9k_hn", "email_extra", "reviews"}
+
+    def tag_sample_type(source: str) -> str:
+        if source in ADV_SOURCES:
+            return "adversarial"
+        elif source in HN_SOURCES:
+            return "hard_negative"
+        return "standard"
+
+    WEIGHT_MAP = {"standard": 1.0, "adversarial": 3.0, "hard_negative": 2.0}
+
+    df["sample_type"] = df["source"].apply(tag_sample_type)
+    df["weight"] = df["sample_type"].map(WEIGHT_MAP)
+
+    print(f"\n  Sample type distribution:")
+    for st in ["standard", "adversarial", "hard_negative"]:
+        n = len(df[df["sample_type"] == st])
+        w = WEIGHT_MAP[st]
+        print(f"    {st:<15s}: {n:>6d} samples x {w:.1f} weight = {n*w:.0f} effective")
 
     # Re-balance 50/50 after cropping
     human_count = len(df[df["label"] == 0])
