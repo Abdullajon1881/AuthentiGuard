@@ -1,16 +1,6 @@
 # AuthentiGuard — AI Content Detection Platform
 
-AI-generated content detection focused on **text detection** as the production-ready core, with experimental support for image, audio, video, and code analysis.
-
-## Current Status
-
-- **Text detection**: Production-ready. DistilBERT ensemble with F1 0.96, AUROC 0.99, adversarial robustness.
-- **Image/Audio/Video/Code**: Experimental. Models exist but are not production-tested.
-- **Passport/Provenance**: Disabled (not production-ready).
-
-See [SUMMARY.md](SUMMARY.md) for detailed status.
-
-AuthentiGuard is an adversarial AI detection platform that verifies whether content is human or AI-generated.
+AAuthentiGuard is an adversarial AI detection platform that verifies whether content is human or AI-generated.
 
 As AI models become indistinguishable from humans, existing detectors fail — they rely on surface patterns that break with simple edits.
 
@@ -20,7 +10,6 @@ we train on adversarial datasets where AI and human content are intentionally ma
 Our system achieves 95%+ accuracy on balanced adversarial data and significantly outperforms traditional detectors on real-world cases where AI tries to pass as human.
 
 We’re building the API layer for content verification, enabling platforms, schools, and businesses to restore trust in digital content.
-
 
 ## Monorepo Structure
 
