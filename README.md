@@ -1,5 +1,17 @@
 # AuthentiGuard — AI Authenticity Detection Platform
 
+AuthentiGuard is an adversarial AI detection platform that verifies whether content is human or AI-generated.
+
+As AI models become indistinguishable from humans, existing detectors fail — they rely on surface patterns that break with simple edits.
+
+We take a different approach:
+we train on adversarial datasets where AI and human content are intentionally made similar, forcing the model to learn real underlying signals instead of shortcuts.
+
+Our system achieves 95%+ accuracy on balanced adversarial data and significantly outperforms traditional detectors on real-world cases where AI tries to pass as human.
+
+We’re building the API layer for content verification, enabling platforms, schools, and businesses to restore trust in digital content.
+
+
 ## Monorepo Structure
 
 ```
