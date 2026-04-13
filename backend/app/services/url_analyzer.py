@@ -167,10 +167,28 @@ async def fetch_and_analyze_url(url: str) -> tuple[ContentType, bytes | str, dic
 
     async with httpx.AsyncClient(
         timeout=FETCH_TIMEOUT,
-        follow_redirects=True,
-        max_redirects=MAX_REDIRECTS,
+        follow_redirects=False,
     ) as client:
         response = await client.get(url)
+
+        # Manual redirect loop — re-validate every hop against SSRF
+        redirects_followed = 0
+        while response.is_redirect and redirects_followed < MAX_REDIRECTS:
+            location = response.headers.get("location")
+            if not location:
+                break
+            # Resolve relative redirects
+            if not location.startswith(("http://", "https://")):
+                from urllib.parse import urljoin
+                location = urljoin(str(response.url), location)
+            # Validate the redirect target (checks scheme, hostname, resolved IP)
+            location = validate_url(location)
+            response = await client.get(location)
+            redirects_followed += 1
+
+        if response.is_redirect:
+            raise ValueError(f"Too many redirects (>{MAX_REDIRECTS})")
+
         response.raise_for_status()
 
     content_type = _detect_content_type(response)

@@ -43,3 +43,8 @@ prometheus-client==0.20.0
 python-dotenv==1.0.1
 tenacity==8.3.0
 orjson==3.10.3
+
+# ── Testing ───────────────────────────────────────────────────
+pytest==8.2.0
+pytest-asyncio==0.23.6
+pytest-cov==5.0.0

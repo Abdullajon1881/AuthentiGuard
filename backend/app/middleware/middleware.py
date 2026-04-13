@@ -19,12 +19,19 @@ from ..core.redis import get_redis
 
 log = structlog.get_logger(__name__)
 
-TIER_LIMITS = {
-    "free":       1000,
-    "pro":        1000,
-    "enterprise": 1000,
-    "anonymous":  1000,
-}
+def _get_tier_limits() -> dict[str, int]:
+    """Read rate limits from settings with safe defaults."""
+    try:
+        settings = get_settings()
+        return {
+            "free":       settings.RATE_LIMIT_FREE_TIER,
+            "pro":        settings.RATE_LIMIT_PRO_TIER,
+            "enterprise": settings.RATE_LIMIT_ENTERPRISE_TIER,
+            "anonymous":  settings.RATE_LIMIT_FREE_TIER,
+        }
+    except Exception:
+        # Safe defaults if settings unavailable
+        return {"free": 10, "pro": 100, "enterprise": 1000, "anonymous": 10}
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -44,7 +51,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         tier, identifier = self._get_tier_and_id(request)
-        limit  = TIER_LIMITS.get(tier, TIER_LIMITS["anonymous"])
+        tier_limits = _get_tier_limits()
+        limit  = tier_limits.get(tier, tier_limits["anonymous"])
         window = 60   # 1-minute sliding window
 
         is_limited, current, reset_at = await self._check_rate_limit(

@@ -1,4 +1,14 @@
-# AuthentiGuard — AI Authenticity Detection Platform
+# AuthentiGuard — AI Content Detection Platform
+
+AI-generated content detection focused on **text detection** as the production-ready core, with experimental support for image, audio, video, and code analysis.
+
+## Current Status
+
+- **Text detection**: Production-ready. DistilBERT ensemble with F1 0.96, AUROC 0.99, adversarial robustness.
+- **Image/Audio/Video/Code**: Experimental. Models exist but are not production-tested.
+- **Passport/Provenance**: Disabled (not production-ready).
+
+See [SUMMARY.md](SUMMARY.md) for detailed status.
 
 AuthentiGuard is an adversarial AI detection platform that verifies whether content is human or AI-generated.
 
@@ -16,34 +26,23 @@ We’re building the API layer for content verification, enabling platforms, sch
 
 ```
 authentiguard/
-├── frontend/          Next.js + React + TypeScript + Tailwind
+├── frontend/          Next.js 14 + React + TypeScript + Tailwind
 ├── backend/           FastAPI — API gateway, auth, upload, orchestration
 ├── ai/
-│   ├── text_detector/
-│   ├── audio_detector/
-│   ├── video_detector/
-│   ├── image_detector/
-│   ├── code_detector/
-│   └── ensemble_engine/
+│   ├── text_detector/     Production text detection ensemble
+│   ├── image_detector/    Experimental
+│   ├── audio_detector/    Experimental
+│   ├── video_detector/    Experimental
+│   ├── code_detector/     Experimental
+│   └── ensemble_engine/   Detection routing + dispatch
 ├── datasets/
-│   ├── human/         Human-authored content
-│   ├── ai-generated/  AI-generated content
-│   └── adversarial/   Attack/evasion samples
+├── scripts/           Training + evaluation scripts
 ├── infra/
-│   ├── docker/        Compose configs, init scripts
-│   ├── k8s/           Helm charts, manifests
-│   └── terraform/     IaC for cloud infra
-├── security/          Encryption, signatures, compliance
-└── docs/              API docs, architecture, onboarding
+│   ├── docker/        Compose configs
+│   ├── k8s/           Kubernetes manifests
+│   └── terraform/     AWS IaC
+└── security/          Encryption, signatures, compliance
 ```
-
-## Branching Strategy
-
-| Branch | Purpose |
-|---|---|
-| `main` | Production — only merged from `develop` via PR |
-| `develop` | Integration — feature branches merge here |
-| `feature/*` | Individual features / detectors |
 
 ## Tech Stack
 
@@ -53,15 +52,29 @@ authentiguard/
 | Backend | FastAPI, Python 3.11, SQLAlchemy 2, Alembic |
 | Queue | Celery + Redis 7 |
 | Database | PostgreSQL 16 |
-| Storage | S3 / Cloudflare R2 (MinIO locally) |
-| ML | PyTorch, Transformers, scikit-learn, ONNX |
-| Tracking | MLflow / Weights & Biases |
-| Data versioning | DVC |
-| Infra | Docker, Kubernetes, Helm, Terraform |
+| Storage | S3 / MinIO |
+| ML | PyTorch, Transformers, scikit-learn |
+| Infra | Docker, Kubernetes, Terraform |
 
-## Documentation
+## Quick Start
 
-- [API Reference](docs/api/)
-- [Architecture](docs/architecture/)
-- [Developer Onboarding](docs/onboarding/)
-- [Dataset Documentation](datasets/)
+```bash
+# Backend
+cd backend && pip install -r requirements.txt
+uvicorn app.main:app --reload
+
+# Frontend
+cd frontend && npm install && npm run dev
+
+# Full stack (Docker)
+docker compose up
+```
+
+## API
+
+- `POST /api/v1/analyze/text` — Submit text for detection
+- `POST /api/v1/analyze/file` — Upload file for detection
+- `POST /api/v1/analyze/url` — Submit URL for content fetch + detection
+- `GET  /api/v1/jobs/{id}` — Poll job status
+- `GET  /api/v1/jobs/{id}/result` — Get detection result
+- `GET  /api/v1/jobs/{id}/report` — Export report (JSON/PDF)

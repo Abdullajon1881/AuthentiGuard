@@ -61,15 +61,19 @@ function FrequencyViz({ fftGridScore, fftHighFreqRatio }: { fftGridScore: number
 
 export default function ImageAnalysisViewer({ result, imageUrl }: Props) {
   const [tab, setTab] = useState<'signals' | 'frequency'>('signals')
-  const ev = result.evidence_summary ?? {}
+  const ev = (result.evidence_summary ?? {}) as Record<string, number>
+
+  function w(val: number, threshold: number, high: ImageSignal['weight'], low: ImageSignal['weight']): ImageSignal['weight'] {
+    return val > threshold ? high : low
+  }
 
   const signalBars: ImageSignal[] = [
-    { name: 'GAN fingerprint',     value: ev.fingerprint_correlation ?? 0, label: 'model residual',  weight: (ev.fingerprint_correlation ?? 0) > 0.5 ? 'high' : 'medium' },
-    { name: 'FFT grid artifact',   value: ev.fft_grid_score ?? 0,         label: 'checkerboard',    weight: (ev.fft_grid_score ?? 0) > 0.4 ? 'high' : 'low' },
-    { name: 'Over-smoothed HF',    value: ev.fft_high_freq_ratio ?? 0,    label: 'no camera noise', weight: (ev.fft_high_freq_ratio ?? 0) > 0.5 ? 'high' : 'medium' },
-    { name: 'Texture uniformity',  value: ev.texture_uniformity ?? 0,      label: 'GLCM analysis',   weight: (ev.texture_uniformity ?? 0) > 0.6 ? 'medium' : 'low' },
-    { name: 'Bilateral symmetry',  value: ev.bilateral_symmetry ?? 0,      label: 'StyleGAN signal', weight: (ev.bilateral_symmetry ?? 0) > 0.85 ? 'medium' : 'low' },
-    { name: 'Background pattern',  value: ev.background_uniformity ?? 0,   label: 'diffusion signal',weight: (ev.background_uniformity ?? 0) > 0.7 ? 'medium' : 'low' },
+    { name: 'GAN fingerprint',     value: ev.fingerprint_correlation ?? 0, label: 'model residual',  weight: w(ev.fingerprint_correlation ?? 0, 0.5, 'high', 'medium') },
+    { name: 'FFT grid artifact',   value: ev.fft_grid_score ?? 0,         label: 'checkerboard',    weight: w(ev.fft_grid_score ?? 0, 0.4, 'high', 'low') },
+    { name: 'Over-smoothed HF',    value: ev.fft_high_freq_ratio ?? 0,    label: 'no camera noise', weight: w(ev.fft_high_freq_ratio ?? 0, 0.5, 'high', 'medium') },
+    { name: 'Texture uniformity',  value: ev.texture_uniformity ?? 0,      label: 'GLCM analysis',   weight: w(ev.texture_uniformity ?? 0, 0.6, 'medium', 'low') },
+    { name: 'Bilateral symmetry',  value: ev.bilateral_symmetry ?? 0,      label: 'StyleGAN signal', weight: w(ev.bilateral_symmetry ?? 0, 0.85, 'medium', 'low') },
+    { name: 'Background pattern',  value: ev.background_uniformity ?? 0,   label: 'diffusion signal',weight: w(ev.background_uniformity ?? 0, 0.7, 'medium', 'low') },
   ].filter(s => s.value > 0)
 
   const labelColor = result.label === 'AI' ? 'var(--ai)' : result.label === 'HUMAN' ? 'var(--human)' : 'var(--uncertain)'

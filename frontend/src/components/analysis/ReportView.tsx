@@ -1,7 +1,6 @@
 'use client'
 
 import { Download, ArrowRight } from 'lucide-react'
-import { cn } from '@/lib/cn'
 import type { DetectionResult, Label } from '@/types'
 import EvidencePanel from '../evidence/EvidencePanel'
 

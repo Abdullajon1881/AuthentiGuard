@@ -4,7 +4,7 @@ import React, { useCallback, useRef, useState } from 'react'
 import { Upload, X, FileText, Loader2 } from 'lucide-react'
 import { analysis } from '@/lib/api'
 import { cn } from '@/lib/cn'
-import type { AnalysisJob, ContentType } from '@/types'
+import type { AnalysisJob } from '@/types'
 
 type InputMode = 'text' | 'file' | 'url' | 'code'
 

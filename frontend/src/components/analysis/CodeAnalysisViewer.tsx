@@ -65,7 +65,8 @@ function CodePreview({ code }: { code: string }) {
 
 export default function CodeAnalysisViewer({ result, code }: Props) {
   const [tab, setTab] = useState<Tab>('signals')
-  const ev = result.evidence_summary ?? {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ev = (result.evidence_summary ?? {}) as Record<string, any>
 
   const labelColor = result.label === 'AI' ? 'var(--ai)' : result.label === 'HUMAN' ? 'var(--human)' : 'var(--uncertain)'
   const labelBg = result.label === 'AI' ? 'var(--ai-dim)' : result.label === 'HUMAN' ? 'var(--human-dim)' : 'var(--uncertain-dim)'

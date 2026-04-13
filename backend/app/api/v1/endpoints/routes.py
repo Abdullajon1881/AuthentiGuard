@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload  # noqa: F401 - used by _get_job_or_404
 
 from app.core.database import get_db
 from app.core.security import (
@@ -62,6 +63,7 @@ def _resolve_user_id(current_user) -> uuid.UUID:
 def _resolve_tier(current_user) -> str:
     """Return the user's tier, or 'free' for anonymous requests."""
     return current_user.tier.value if current_user else "free"
+
 
 router = APIRouter()
 
@@ -679,48 +681,6 @@ async def update_webhook(
     await db.commit()
     await db.refresh(webhook)
     return webhook
-
-
-# ═══════════════════════════════════════════════════════════════
-# PASSPORT — PUBLIC VERIFICATION
-# ═══════════════════════════════════════════════════════════════
-
-@router.get("/passport/{content_hash}", tags=["passport"])
-async def get_passport(content_hash: str) -> dict:
-    """
-    Public endpoint — retrieve an authenticity passport by content hash.
-    No authentication required.
-    """
-    try:
-        from authenticity_passport.signer.passport import PassportRegistry  # type: ignore
-        registry = PassportRegistry()
-        passport = registry.get(content_hash)
-        if not passport:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Passport not found")
-        return passport.__dict__ if hasattr(passport, "__dict__") else passport
-    except ImportError:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Passport module not available",
-        )
-
-
-@router.post("/passport/verify", tags=["passport"])
-async def verify_passport(body: dict) -> dict:
-    """
-    Public endpoint — verify an authenticity passport.
-    Accepts passport JSON and returns verification result.
-    """
-    try:
-        from authenticity_passport.signer.passport import PassportVerifier  # type: ignore
-        verifier = PassportVerifier()
-        result = verifier.verify(body)
-        return {"verified": result.get("valid", False), "details": result}
-    except ImportError:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Passport module not available",
-        )
 
 
 # ═══════════════════════════════════════════════════════════════

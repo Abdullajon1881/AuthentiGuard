@@ -6,7 +6,6 @@ import AppShell from '@/components/layout/AppShell'
 import UploadModule from '@/components/upload/UploadModule'
 import AnalysisViewer from '@/components/analysis/AnalysisViewer'
 import ReportView from '@/components/analysis/ReportView'
-import { cn } from '@/lib/cn'
 import type { AnalysisJob, DetectionResult } from '@/types'
 
 type Phase = 'upload' | 'analyzing' | 'result'

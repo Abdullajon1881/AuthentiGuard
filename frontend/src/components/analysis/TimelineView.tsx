@@ -25,7 +25,7 @@ function formatTime(s: number): string {
 }
 
 export default function TimelineView({
-  durationS, flaggedSegments, chunkResults = [], label, contentType,
+  durationS, flaggedSegments, chunkResults = [], label: _label, contentType,
 }: Props) {
   const [hoveredSegment, setHoveredSegment] = useState<FlaggedSegment | null>(null)
 

@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { cn } from '@/lib/cn'
 import type { EvidenceSignal, SentenceScore } from '@/types'
 
 function scoreToColor(score: number): string {
@@ -37,7 +36,7 @@ interface Props {
   overallScore:   number
 }
 
-export default function EvidencePanel({ sentenceScores, topSignals, overallScore }: Props) {
+export default function EvidencePanel({ sentenceScores, topSignals }: Props) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
 
   const hasSentences = sentenceScores.length > 0

@@ -73,6 +73,13 @@ export interface ModelAttribution {
   other:         number
 }
 
+export interface ImageSignal {
+  name:   string
+  value:  number
+  label:  string
+  weight: 'high' | 'medium' | 'low'
+}
+
 export interface DetectionResult {
   job_id:             string
   status:             JobStatus
@@ -88,6 +95,7 @@ export interface DetectionResult {
   report_url:         string | null
   created_at:         string
   completed_at:       string | null
+  evidence_summary?:  Record<string, unknown>
 }
 
 // ── Dashboard ─────────────────────────────────────────────────

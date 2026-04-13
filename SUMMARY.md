@@ -1,35 +1,53 @@
-# AuthentiGuard — Build Complete
+# AuthentiGuard — Project Status
 
-All 147 steps | 22 phases | ~35,000 lines | 260+ files | 360+ tests
+## Production-Ready
 
-## Completion Summary (March 2026)
+### Text Detection
+- **4-layer ensemble**: perplexity, stylometry, DistilBERT transformer, adversarial detection
+- **Accuracy**: F1 0.9555 on test set, AUROC 0.9897
+- **Adversarial robustness**: 80% accuracy on hard adversarial samples (humanized AI, AI-ified human, mixed)
+- **Threshold-calibrated**: optimal threshold 0.80 via validation sweep
+- **Training pipeline**: dataset v2 (34k samples, 5 sources), sample weighting, hard example mining
 
-### Core Detection (5/5 modalities)
-- Text: 4-layer ensemble (perplexity, stylometry, DeBERTa, adversarial) + XGBoost meta
-- Image: EfficientNet-B4 + ViT-B/16 + GAN fingerprint + FFT + texture analysis
-- Audio: CNN + ResNet-18 + Wav2Vec2 + GDD phase coherence
-- Video: XceptionNet + EfficientNet-B4 + ViT + temporal consistency + face forensics
-- Code: AST analysis + CodeBERT transformer
-
-### Backend API (all endpoints live)
-- Auth: register, login, refresh token rotation, logout
-- Analysis: text paste, file upload, URL fetch + route to detector
-- Jobs: polling, results, report export (PDF + JSON)
+### Backend API
+- Auth: register, login, JWT refresh rotation, logout, password reset
+- Analysis: text paste, file upload, URL fetch (SSRF-protected)
+- Jobs: async polling, results, report export (PDF + JSON)
 - Webhooks: full CRUD + HMAC-signed delivery
-- Passport: public verification + audit trail
-- Dashboard: usage stats
+- Rate limiting by tier (configurable via settings)
 
 ### Infrastructure
-- Docker Compose (8 services), Kubernetes (Helm + Kustomize), Terraform (AWS)
-- CI/CD: GitHub Actions (lint, test, build, staging canary, production rollout)
-- Alembic migrations, DVC data pipeline, MLflow experiment tracking
+- Docker Compose (8 services), Kubernetes manifests, Terraform (AWS)
+- Alembic migrations, DVC data pipeline
+- CI/CD: GitHub Actions
 
-### Security
-- AES-256-GCM field encryption, JWT rotation, ECDSA report signing
-- GDPR Article 15/17 compliance, SOC 2 controls (88% mapped)
-- SSRF-protected URL analysis, rate limiting by tier
+## Experimental / Beta
 
-### Testing
-- Unit tests: all detectors + all workers
-- Smoke tests: health, auth flow, text analysis, file upload
-- Integration tests: full API flow, webhook CRUD
+### Other Modalities
+- **Image**: EfficientNet-B4 + ViT-B/16 + GAN fingerprint + FFT (model exists, not production-tested)
+- **Audio**: CNN + ResNet-18 + Wav2Vec2 (model exists, not production-tested)
+- **Video**: XceptionNet + temporal consistency (training script exists, no production model)
+- **Code**: AST analysis + CodeBERT (model exists, not production-tested)
+
+### Not Production-Ready
+- Passport/provenance feature (disabled)
+- Browser extension (non-functional placeholder)
+- Non-text Celery workers (implemented but untested in production)
+
+## Testing
+- Smoke tests: health, auth flow, text analysis
+- Integration tests: API flow basics
+- Frontend: jest configured, minimal coverage
+- No comprehensive test suite yet
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS |
+| Backend | FastAPI, Python 3.11, SQLAlchemy 2, Alembic |
+| Queue | Celery + Redis 7 |
+| Database | PostgreSQL 16 |
+| Storage | S3 / MinIO |
+| ML | PyTorch, Transformers, scikit-learn |
+| Infra | Docker, Kubernetes, Terraform |

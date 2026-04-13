@@ -45,8 +45,12 @@ async function apiFetch<T>(path: string, opts: FetchOptions = {}): Promise<T> {
   const { skipAuth = false, ...init } = opts
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(init.headers as Record<string, string> ?? {}),
+  }
+
+  // Don't set Content-Type for FormData — let the browser set multipart boundaries
+  if (!(init.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json'
   }
 
   if (!skipAuth && _accessToken) {
@@ -144,10 +148,14 @@ export const analysis = {
   async submitFile(file: File): Promise<AnalysisJob> {
     const form = new FormData()
     form.append('file', file)
+    const headers: Record<string, string> = {}
+    if (_accessToken) {
+      headers['Authorization'] = `Bearer ${_accessToken}`
+    }
     return apiFetch('/analyze/file', {
       method: 'POST',
       body: form,
-      headers: { Authorization: `Bearer ${_accessToken}` },
+      headers,
     })
   },
 
