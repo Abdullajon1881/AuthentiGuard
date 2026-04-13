@@ -1,6 +1,6 @@
 # AuthentiGuard — AI Content Detection Platform
 
-AAuthentiGuard is an adversarial AI detection platform that verifies whether content is human or AI-generated.
+AuthentiGuard is an adversarial AI detection platform that verifies whether content is human or AI-generated.
 
 As AI models become indistinguishable from humans, existing detectors fail — they rely on surface patterns that break with simple edits.
 
