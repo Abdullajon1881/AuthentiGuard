@@ -45,19 +45,6 @@ authentiguard/
 | ML | PyTorch, Transformers, scikit-learn |
 | Infra | Docker, Kubernetes, Terraform |
 
-## Quick Start
-
-```bash
-# Backend
-cd backend && pip install -r requirements.txt
-uvicorn app.main:app --reload
-
-# Frontend
-cd frontend && npm install && npm run dev
-
-# Full stack (Docker)
-docker compose up
-```
 
 ## API
 
