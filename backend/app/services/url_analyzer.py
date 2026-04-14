@@ -165,39 +165,64 @@ async def fetch_and_analyze_url(url: str) -> tuple[ContentType, bytes | str, dic
         "fetch_timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
+    # Hard cap: never download more than the largest allowed size
+    absolute_max = max(MAX_SIZES.values())
+
     async with httpx.AsyncClient(
         timeout=FETCH_TIMEOUT,
         follow_redirects=False,
     ) as client:
-        response = await client.get(url)
-
-        # Manual redirect loop — re-validate every hop against SSRF
+        # First pass: follow redirects with SSRF validation on each hop
+        target_url = url
         redirects_followed = 0
-        while response.is_redirect and redirects_followed < MAX_REDIRECTS:
+        while True:
+            response = await client.head(target_url)
+            if not response.is_redirect:
+                break
+            if redirects_followed >= MAX_REDIRECTS:
+                raise ValueError(f"Too many redirects (>{MAX_REDIRECTS})")
             location = response.headers.get("location")
             if not location:
                 break
-            # Resolve relative redirects
             if not location.startswith(("http://", "https://")):
                 from urllib.parse import urljoin
                 location = urljoin(str(response.url), location)
-            # Validate the redirect target (checks scheme, hostname, resolved IP)
-            location = validate_url(location)
-            response = await client.get(location)
+            target_url = validate_url(location)
             redirects_followed += 1
 
-        if response.is_redirect:
-            raise ValueError(f"Too many redirects (>{MAX_REDIRECTS})")
+        # Check Content-Length header before downloading body
+        declared_length = response.headers.get("content-length")
+        if declared_length and int(declared_length) > absolute_max:
+            raise ValueError(
+                f"Content too large: server declared {int(declared_length) / 1024 / 1024:.1f} MB "
+                f"(absolute max {absolute_max / 1024 / 1024:.0f} MB)"
+            )
 
-        response.raise_for_status()
+        # Stream the actual GET with incremental size enforcement
+        chunks: list[bytes] = []
+        downloaded = 0
+        async with client.stream("GET", target_url) as stream:
+            stream.raise_for_status()
+            async for chunk in stream.aiter_bytes(chunk_size=64 * 1024):
+                downloaded += len(chunk)
+                if downloaded > absolute_max:
+                    raise ValueError(
+                        f"Content too large: exceeded {absolute_max / 1024 / 1024:.0f} MB "
+                        f"during download (streamed)"
+                    )
+                chunks.append(chunk)
+            # Capture headers from the streamed response
+            response = stream
+
+    content_bytes = b"".join(chunks)
+    content_length = len(content_bytes)
 
     content_type = _detect_content_type(response)
-    content_length = len(response.content)
     metadata["content_length"] = content_length
     metadata["content_type_header"] = response.headers.get("content-type", "")
     metadata["status_code"] = response.status_code
 
-    # Check size limits
+    # Check per-type size limits
     max_size = MAX_SIZES.get(content_type, MAX_SIZES[ContentType.TEXT])
     if content_length > max_size:
         raise ValueError(
@@ -208,16 +233,15 @@ async def fetch_and_analyze_url(url: str) -> tuple[ContentType, bytes | str, dic
     # Extract content based on type
     if content_type == ContentType.TEXT:
         ct_header = response.headers.get("content-type", "")
+        text_str = content_bytes.decode("utf-8", errors="replace")
         if "html" in ct_header.lower():
-            text = _extract_text_from_html(response.text)
-        else:
-            text = response.text
+            text_str = _extract_text_from_html(text_str)
 
-        if len(text.strip()) < 20:
+        if len(text_str.strip()) < 20:
             raise ValueError("Extracted text is too short to analyze (minimum 20 characters)")
 
-        log.info("url_fetched", url=url, type="text", chars=len(text))
-        return content_type, text, metadata
+        log.info("url_fetched", url=url, type="text", chars=len(text_str))
+        return content_type, text_str, metadata
     else:
         log.info("url_fetched", url=url, type=content_type.value, bytes=content_length)
-        return content_type, response.content, metadata
+        return content_type, content_bytes, metadata

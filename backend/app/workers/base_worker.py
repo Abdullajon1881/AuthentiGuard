@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import structlog
+from celery.exceptions import SoftTimeLimitExceeded  # type: ignore
 from sqlalchemy import select, update
 
 from ..models.models import DetectionJob, DetectionResult, JobStatus
@@ -155,6 +156,23 @@ class BaseDetectionWorker(ABC):
                     ms=elapsed_ms,
                 )
 
+                # ── Record Prometheus metrics ────────────────
+                try:
+                    from ..core.metrics import (
+                        DETECTION_DURATION, DETECTION_SCORE, DETECTION_JOBS_TOTAL,
+                    )
+                    detector_mode = detection_result.evidence_summary.get("detector_mode", "unknown")
+                    DETECTION_DURATION.labels(
+                        content_type=self.content_type,
+                        detector_mode=detector_mode,
+                    ).observe(elapsed_ms / 1000.0)
+                    DETECTION_SCORE.labels(
+                        content_type=self.content_type,
+                    ).observe(detection_result.authenticity_score)
+                    DETECTION_JOBS_TOTAL.labels(status="completed").inc()
+                except Exception:
+                    pass  # Metrics must never break detection
+
                 # ── Trigger webhook ──────────────────────────
                 from .webhook_worker import dispatch_webhook
                 dispatch_webhook.delay(job_id, "job.completed")
@@ -165,6 +183,34 @@ class BaseDetectionWorker(ABC):
                     "label": detection_result.label,
                     "processing_ms": elapsed_ms,
                 }
+
+            except SoftTimeLimitExceeded:
+                # Worker is about to be killed — mark FAILED immediately, don't retry.
+                # Keep this handler minimal: we have ~60s before the hard kill (180s).
+                log.error(
+                    f"{self.content_type}_soft_timeout",
+                    job_id=job_id,
+                )
+                await db.execute(
+                    update(DetectionJob)
+                    .where(
+                        DetectionJob.id == job.id,
+                        DetectionJob.version == current_version,
+                    )
+                    .values(
+                        status=JobStatus.FAILED,
+                        error_message="Detection timed out (exceeded 120s soft limit)",
+                        completed_at=datetime.now(timezone.utc),
+                        version=current_version + 1,
+                    )
+                )
+                await db.commit()
+                try:
+                    from ..core.metrics import DETECTION_JOBS_TOTAL
+                    DETECTION_JOBS_TOTAL.labels(status="timeout").inc()
+                except Exception:
+                    pass
+                return {"error": "timeout", "job_id": job_id}
 
             except Exception as exc:
                 log.error(
@@ -180,12 +226,18 @@ class BaseDetectionWorker(ABC):
                     )
                     .values(
                         status=JobStatus.FAILED,
-                        error_message=str(exc),
+                        error_message=str(exc)[:500],
                         completed_at=datetime.now(timezone.utc),
                         version=current_version + 1,
                     )
                 )
                 await db.commit()
+
+                try:
+                    from ..core.metrics import DETECTION_JOBS_TOTAL
+                    DETECTION_JOBS_TOTAL.labels(status="failed").inc()
+                except Exception:
+                    pass
 
                 # Trigger failure webhook
                 from .webhook_worker import dispatch_webhook

@@ -269,27 +269,78 @@ class _DevFallbackDetector:
         return r
 
 
+_detector_mode: str = "unknown"  # "ml" or "fallback" — set during loading
+
+
 def _get_detector():
-    global _detector
+    global _detector, _detector_mode
     if _detector is None:
+        from ..core.config import get_settings
+        settings = get_settings()
+
+        # Explicit heuristic mode — skip all model loading
+        if settings.DETECTOR_MODE == "heuristic":
+            log.info("text_detector_forced_heuristic", reason="DETECTOR_MODE=heuristic")
+            _detector = _DevFallbackDetector()
+            _detector_mode = "fallback"
+            try:
+                from ..core.metrics import DETECTOR_FALLBACK
+                DETECTOR_FALLBACK.set(1)
+            except Exception:
+                pass
+            return _detector
+
+        import time as _time
+        load_start = _time.monotonic()
         try:
             import sys, os
             root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
             if root not in sys.path:
                 sys.path.insert(0, root)
             from ai.text_detector.ensemble.text_detector import TextDetector  # type: ignore
+
+            # Resolve L3 (DistilBERT) checkpoint — trained with adversarial hard examples
+            checkpoint_dir = os.path.join(root, "ai", "text_detector", "checkpoints", "transformer_v3_hard", "phase1")
+            transformer_ckpt = Path(checkpoint_dir) if os.path.isdir(checkpoint_dir) else None
+
+            if transformer_ckpt:
+                log.info("text_detector_loading", mode="L1+L2+L3", checkpoint=str(transformer_ckpt))
+            else:
+                log.warning("text_detector_loading", mode="L1+L2 only", reason="no L3 checkpoint found")
+
             _detector = TextDetector(
-                transformer_checkpoint=None,   # L3 disabled until fine-tuned (Phase 2)
-                adversarial_checkpoint=None,    # L4 disabled until fine-tuned (Phase 2)
-                meta_checkpoint=None,           # meta disabled until L3/L4 trained
+                transformer_checkpoint=transformer_ckpt,
+                adversarial_checkpoint=None,    # L4 not yet trained
+                meta_checkpoint=None,           # meta not yet trained
                 device="cpu",
             )
             _detector.load_models()
-            log.info("text_detector_loaded_in_worker", mode="L1+L2 MVP")
+            active = len(_detector._active_layers)
+            _detector_mode = "ml"
+            load_secs = _time.monotonic() - load_start
+            log.info("text_detector_loaded_in_worker", mode=_detector_mode,
+                     active_layers=active, load_seconds=round(load_secs, 2))
+            try:
+                from ..core.metrics import MODEL_LOAD_DURATION, DETECTOR_FALLBACK
+                MODEL_LOAD_DURATION.set(load_secs)
+                DETECTOR_FALLBACK.set(0)
+            except Exception:
+                pass
         except Exception as exc:
-            log.warning("text_detector_unavailable_using_dev_fallback", error=str(exc))
+            log.error("text_detector_load_failed_using_fallback", error=str(exc))
             _detector = _DevFallbackDetector()
+            _detector_mode = "fallback"
+            try:
+                from ..core.metrics import DETECTOR_FALLBACK
+                DETECTOR_FALLBACK.set(1)
+            except Exception:
+                pass
     return _detector
+
+
+def get_detector_mode() -> str:
+    """Return the current detector mode: 'ml' or 'fallback'."""
+    return _detector_mode
 
 
 class TextDetectionWorker(BaseDetectionWorker):
@@ -313,6 +364,9 @@ class TextDetectionWorker(BaseDetectionWorker):
         detection_output: Any,
         elapsed_ms: int,
     ) -> DetectionResult:
+        evidence = detection_output.evidence_summary if hasattr(detection_output, 'evidence_summary') else {}
+        # Tag the result with detector mode so consumers know what produced it
+        evidence["detector_mode"] = _detector_mode
         return DetectionResult(
             job_id=job.id,
             authenticity_score=detection_output.score,
@@ -322,8 +376,8 @@ class TextDetectionWorker(BaseDetectionWorker):
                 r.layer_name: r.score
                 for r in detection_output.layer_results
             },
-            evidence_summary=detection_output.evidence_summary,
-            sentence_scores=detection_output.evidence_summary.get("sentence_scores", []),
+            evidence_summary=evidence,
+            sentence_scores=evidence.get("sentence_scores", []),
             model_attribution=getattr(detection_output, "model_attribution", {}),
             processing_ms=elapsed_ms,
         )
@@ -358,6 +412,7 @@ async def _resolve_text(job: DetectionJob) -> str:
 
     if job.s3_key:
         import boto3
+        from botocore.config import Config as BotoConfig
         from ..core.config import get_settings
         settings = get_settings()
 
@@ -365,6 +420,11 @@ async def _resolve_text(job: DetectionJob) -> str:
             "region_name":          settings.AWS_REGION,
             "aws_access_key_id":    settings.AWS_ACCESS_KEY_ID,
             "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
+            "config": BotoConfig(
+                connect_timeout=5,
+                read_timeout=30,
+                retries={"max_attempts": 2},
+            ),
         }
         if settings.S3_ENDPOINT_URL:
             kwargs["endpoint_url"] = settings.S3_ENDPOINT_URL
@@ -383,12 +443,19 @@ async def _resolve_text(job: DetectionJob) -> str:
     raise ValueError("Job has no text content or S3 key")
 
 
+MAX_PDF_PAGES = 100
+
+
 def _extract_pdf_text(data: bytes) -> str:
     try:
         import pypdf  # type: ignore
         import io
         reader = pypdf.PdfReader(io.BytesIO(data))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+        pages = reader.pages[:MAX_PDF_PAGES]
+        text = "\n".join(page.extract_text() or "" for page in pages)
+        if len(reader.pages) > MAX_PDF_PAGES:
+            log.warning("pdf_truncated", total_pages=len(reader.pages), processed=MAX_PDF_PAGES)
+        return text
     except ImportError:
         return data.decode("utf-8", errors="replace")
 

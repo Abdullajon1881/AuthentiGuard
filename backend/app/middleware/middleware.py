@@ -43,7 +43,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip rate limiting for health checks, docs, CORS preflight, and static files
-        if request.url.path in {"/health", "/docs", "/redoc", "/openapi.json"}:
+        skip_paths = {"/health", "/docs", "/redoc", "/openapi.json", "/metrics"}
+        if request.url.path in skip_paths or request.url.path.endswith("/health"):
             return await call_next(request)
         if request.method == "OPTIONS":
             return await call_next(request)
@@ -55,18 +56,38 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         limit  = tier_limits.get(tier, tier_limits["anonymous"])
         window = 60   # 1-minute sliding window
 
-        is_limited, current, reset_at = await self._check_rate_limit(
-            identifier, limit, window
-        )
+        try:
+            is_limited, current, reset_at = await self._check_rate_limit(
+                identifier, limit, window
+            )
+        except Exception as exc:
+            # Redis is down — fail CLOSED (reject request) to prevent abuse.
+            # A public API without rate limiting is an abuse magnet.
+            log.error("rate_limit_redis_unavailable", error=str(exc))
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={
+                    "error": "service_unavailable",
+                    "message": "Rate limiting service is temporarily unavailable. Please retry.",
+                },
+            )
 
-        response = await call_next(request) if not is_limited else JSONResponse(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            content={
-                "error":   "rate_limit_exceeded",
-                "message": f"Rate limit of {limit} requests/minute exceeded.",
-                "retry_after": reset_at,
-            },
-        )
+        if is_limited:
+            try:
+                from ..core.metrics import RATE_LIMIT_HITS
+                RATE_LIMIT_HITS.labels(tier=tier).inc()
+            except Exception:
+                pass
+            response = JSONResponse(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                content={
+                    "error":   "rate_limit_exceeded",
+                    "message": f"Rate limit of {limit} requests/minute exceeded.",
+                    "retry_after": reset_at,
+                },
+            )
+        else:
+            response = await call_next(request)
 
         # Always add rate-limit headers
         response.headers["X-RateLimit-Limit"]     = str(limit)

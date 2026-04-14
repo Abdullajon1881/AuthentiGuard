@@ -78,6 +78,12 @@ class TextDetector:
         """Load all model weights. Call once at startup."""
         log.info("loading_text_detector_models")
 
+        # Pin seeds for reproducible inference across requests
+        import torch
+        torch.manual_seed(42)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(42)
+
         # L1 (perplexity) and L2 (stylometry) always load — no training needed
         self._layer1.load_model()
         self._layer2.load_model()

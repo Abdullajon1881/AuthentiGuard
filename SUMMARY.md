@@ -4,9 +4,10 @@
 
 ### Text Detection
 - **4-layer ensemble**: perplexity, stylometry, DistilBERT transformer, adversarial detection
-- **Accuracy**: F1 0.9555 on test set, AUROC 0.9897
-- **Adversarial robustness**: 80% accuracy on hard adversarial samples (humanized AI, AI-ified human, mixed)
-- **Threshold-calibrated**: optimal threshold 0.80 via validation sweep
+- **Accuracy**: F1 0.9498, AUROC 0.9818 (v3_hard adversarial checkpoint, epoch 2)
+- **Non-adversarial baseline**: F1 0.9457, AUROC 0.9897 (v3 checkpoint, epoch 3 — not used in production)
+- **Adversarial robustness**: trained on hard adversarial samples (humanized AI, AI-ified human, mixed)
+- **Threshold-calibrated**: adaptive thresholds by active layer count (0.75 AI threshold at 4 layers)
 - **Training pipeline**: dataset v2 (34k samples, 5 sources), sample weighting, hard example mining
 
 ### Backend API
@@ -35,10 +36,11 @@
 - Non-text Celery workers (implemented but untested in production)
 
 ## Testing
-- Smoke tests: health, auth flow, text analysis
-- Integration tests: API flow basics
+- Unit tests: config, security, rate limiting, CORS, schemas, workers
+- Integration tests: register/login/submit flow (mocked Celery)
+- E2E tests: full submit -> queue -> worker -> result (real stack, no mocks)
+- Load tests: 50-concurrent stress test with latency/error-rate thresholds
 - Frontend: jest configured, minimal coverage
-- No comprehensive test suite yet
 
 ## Tech Stack
 

@@ -25,11 +25,9 @@ celery_app = Celery(
     backend=_settings.CELERY_RESULT_BACKEND,
     include=[
         "app.workers.text_worker",
-        "app.workers.image_worker",
-        "app.workers.audio_worker",
-        "app.workers.video_worker",
         "app.workers.webhook_worker",
         "app.workers.cleanup",
+        "app.workers.alerting",
     ],
 )
 
@@ -65,6 +63,10 @@ celery_app.conf.update(
     task_soft_time_limit=120,    # seconds — sends SoftTimeLimitExceeded
     task_time_limit=180,         # hard kill after 180s
 
+    # ── Worker memory management ─────────────────────────────────
+    worker_max_memory_per_child=512_000,  # 512 MB — recycle workers that leak
+    worker_max_tasks_per_child=1000,      # recycle after 1000 tasks as safety net
+
     # ── Result retention ───────────────────────────────────────
     result_expires=86400,        # Celery result TTL: 24h (full result in Postgres)
 
@@ -96,4 +98,36 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.cleanup.cleanup_stuck_jobs",
         "schedule": 300.0,  # every 5 minutes
     },
+    "health-alerting": {
+        "task": "app.workers.alerting.check_health",
+        "schedule": 60.0,  # every 60 seconds
+    },
 }
+
+
+# ── Preload models on worker startup ─────────────────────────
+# Avoids cold-start latency on the first real task (10-30s model load).
+# Uses worker_process_init signal — fires once per worker child process.
+
+from celery.signals import worker_process_init  # type: ignore
+
+@worker_process_init.connect
+def preload_models(**kwargs):
+    """Eagerly load ML models so the first task doesn't pay cold-start cost."""
+    import os
+    import structlog
+    _log = structlog.get_logger(__name__)
+
+    # Prevent HuggingFace from hanging on network requests in production.
+    # Models must be pre-downloaded into the Docker image or local cache.
+    os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "60")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", os.environ.get("TRANSFORMERS_OFFLINE", "0"))
+    os.environ.setdefault("HF_HUB_OFFLINE", os.environ.get("HF_HUB_OFFLINE", "0"))
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+    try:
+        from .text_worker import _get_detector
+        _get_detector()
+        _log.info("worker_models_preloaded")
+    except Exception as exc:
+        _log.error("worker_model_preload_failed", error=str(exc))

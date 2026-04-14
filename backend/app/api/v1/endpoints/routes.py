@@ -386,6 +386,7 @@ async def get_job_result(
         model_attribution=ModelAttributionSchema(**r.model_attribution),
         processing_ms=r.processing_ms,
         report_url=f"/api/v1/jobs/{job.id}/report" if r.report_s3_key else None,
+        detector_mode=r.evidence_summary.get("detector_mode", "unknown"),
         created_at=job.created_at,
         completed_at=job.completed_at,
     )

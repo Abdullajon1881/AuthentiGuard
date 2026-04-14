@@ -57,8 +57,13 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL:   str
     CELERY_RESULT_BACKEND: str
 
+    # ── Detector ──────────────────────────────────────────────
+    # "ml" = load real ML models (L1+L2+L3 ensemble)
+    # "heuristic" = use lightweight heuristic fallback (no GPU/model deps)
+    DETECTOR_MODE: Literal["ml", "heuristic"] = "ml"
+
     # ── File upload ────────────────────────────────────────────
-    MAX_UPLOAD_SIZE_MB:     int = 500
+    MAX_UPLOAD_SIZE_MB:     int = 50
     ALLOWED_TEXT_EXTENSIONS: list[str] = [".txt", ".md", ".pdf", ".docx"]
     ALLOWED_AUDIO_EXTENSIONS: list[str] = [".mp3", ".wav", ".flac", ".m4a", ".ogg"]
     ALLOWED_VIDEO_EXTENSIONS: list[str] = [".mp4", ".mov", ".avi", ".mkv", ".webm"]

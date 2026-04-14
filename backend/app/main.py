@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.endpoints.routes import router as api_router
@@ -36,12 +36,14 @@ async def _ensure_db_tables():
 async def _ensure_minio_buckets(settings):
     """Create S3/MinIO buckets if they don't exist."""
     import boto3
+    from botocore.config import Config as BotoConfig
     from botocore.exceptions import ClientError
 
     kwargs = {
         "region_name": settings.AWS_REGION,
         "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
         "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
+        "config": BotoConfig(connect_timeout=5, read_timeout=10, retries={"max_attempts": 2}),
     }
     if settings.S3_ENDPOINT_URL:
         kwargs["endpoint_url"] = settings.S3_ENDPOINT_URL
@@ -193,22 +195,116 @@ def create_app() -> FastAPI:
                 pass  # Invalid/expired token — fall through to anonymous rate limiting
         return await call_next(request)
 
+    # ── Request body size limit (10 MB) ─────────────────────────
+    from starlette.middleware.base import BaseHTTPMiddleware
+
+    MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024  # 10 MB
+
+    class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            content_length = request.headers.get("content-length")
+            if content_length and int(content_length) > MAX_REQUEST_BODY_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"error": "request_too_large", "message": "Request body exceeds 10 MB limit"},
+                )
+            return await call_next(request)
+
+    app.add_middleware(RequestSizeLimitMiddleware)
+
     # ── Rate limiting + audit logging ─────────────────────────
     app.add_middleware(AuditLogMiddleware)
     app.add_middleware(RateLimitMiddleware)
 
+    # ── Prometheus metrics ──────────────────────────────────────
+    from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+    from app.core.metrics import DETECTOR_FALLBACK  # noqa: F811
+    import time as _time
+
+    REQUEST_LATENCY = Histogram(
+        "http_request_duration_seconds",
+        "HTTP request latency",
+        ["method", "path", "status"],
+        buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+    )
+    REQUEST_COUNT = Counter(
+        "http_requests_total",
+        "Total HTTP requests",
+        ["method", "path", "status"],
+    )
+
+    @app.middleware("http")
+    async def prometheus_middleware(request: Request, call_next):
+        if request.url.path in {"/metrics", "/health"}:
+            return await call_next(request)
+        start = _time.perf_counter()
+        response = await call_next(request)
+        elapsed = _time.perf_counter() - start
+        # Normalize path to avoid cardinality explosion (strip UUIDs)
+        import re
+        path = re.sub(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "{id}",
+            request.url.path,
+        )
+        REQUEST_LATENCY.labels(
+            method=request.method, path=path, status=response.status_code,
+        ).observe(elapsed)
+        REQUEST_COUNT.labels(
+            method=request.method, path=path, status=response.status_code,
+        ).inc()
+        return response
+
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics():
+        # Update detector fallback gauge on each scrape
+        try:
+            from app.workers.text_worker import get_detector_mode
+            DETECTOR_FALLBACK.set(1 if get_detector_mode() == "fallback" else 0)
+        except Exception:
+            pass
+        return Response(
+            content=generate_latest(),
+            media_type=CONTENT_TYPE_LATEST,
+        )
+
     # ── Health check ─────────────────────────────────────────
     @app.get("/health", include_in_schema=False)
     async def health():
+        checks: dict[str, str] = {}
+
+        # Database
         try:
             async with engine.connect() as conn:
                 await conn.execute(__import__("sqlalchemy").text("SELECT 1"))
-            return {"status": "healthy"}
+            checks["database"] = "ok"
+        except Exception as exc:
+            checks["database"] = f"error: {exc}"
+
+        # Redis
+        try:
+            from app.core.redis import redis_ping
+            if await redis_ping():
+                checks["redis"] = "ok"
+            else:
+                checks["redis"] = "error: ping returned False"
+        except Exception as exc:
+            checks["redis"] = f"error: {exc}"
+
+        # Detector mode (informational — not a hard failure)
+        try:
+            from app.workers.text_worker import get_detector_mode
+            checks["detector_mode"] = get_detector_mode()
         except Exception:
-            return JSONResponse(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={"status": "unhealthy"},
-            )
+            checks["detector_mode"] = "unknown"
+
+        all_ok = checks.get("database") == "ok" and checks.get("redis") == "ok"
+        if all_ok:
+            return {"status": "healthy", "checks": checks}
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "unhealthy", "checks": checks},
+        )
 
     # ── Routes ────────────────────────────────────────────────
     app.include_router(api_router, prefix="/api/v1")

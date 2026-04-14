@@ -148,6 +148,7 @@ class DetectionResultResponse(BaseModel):
     model_attribution: ModelAttributionSchema = ModelAttributionSchema()
     processing_ms:     int | None
     report_url:        str | None
+    detector_mode:     Literal["ml", "fallback", "unknown"] = "unknown"
     created_at:        datetime
     completed_at:      datetime | None
 

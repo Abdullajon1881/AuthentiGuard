@@ -1,0 +1,138 @@
+# ── Test stack for E2E tests ──────────────────────────────────
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d
+#   cd backend && pytest tests/e2e/ -v
+#   docker compose -f docker-compose.test.yml down -v
+#
+# Minimal: postgres + redis + minio + backend + worker.
+# No Caddy, no frontend, no MLflow, no Flower.
+
+networks:
+  test:
+    driver: bridge
+
+volumes:
+  test_pg_data:
+  test_redis_data:
+  test_minio_data:
+  test_model_cache:
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ag_test_postgres
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: authentiguard_test
+    volumes:
+      - test_pg_data:/var/lib/postgresql/data
+    networks:
+      - test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ag_test_redis
+    command: redis-server --requirepass testpass --save "" --loglevel warning
+    volumes:
+      - test_redis_data:/data
+    networks:
+      - test
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "testpass", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: ag_test_minio
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - test_minio_data:/data
+    networks:
+      - test
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: ag_test_backend
+    environment:
+      APP_ENV: development
+      APP_DEBUG: "true"
+      APP_SECRET_KEY: test-secret-key-at-least-32-characters-long
+      DATABASE_URL: postgresql+asyncpg://test:testpass@postgres:5432/authentiguard_test
+      REDIS_URL: redis://:testpass@redis:6379/0
+      CELERY_BROKER_URL: redis://:testpass@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:testpass@redis:6379/1
+      S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      JWT_SECRET_KEY: test-jwt-secret-key-at-least-32-characters-long-for-hs256
+      ENCRYPTION_KEY: "dGVzdC1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcw=="
+      DETECTOR_MODE: heuristic
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - test
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      target: runtime
+    container_name: ag_test_worker
+    environment:
+      APP_ENV: development
+      APP_SECRET_KEY: test-secret-key-at-least-32-characters-long
+      DATABASE_URL: postgresql+asyncpg://test:testpass@postgres:5432/authentiguard_test
+      REDIS_URL: redis://:testpass@redis:6379/0
+      CELERY_BROKER_URL: redis://:testpass@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:testpass@redis:6379/1
+      S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      JWT_SECRET_KEY: test-jwt-secret-key-at-least-32-characters-long-for-hs256
+      ENCRYPTION_KEY: "dGVzdC1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcw=="
+      DETECTOR_MODE: ${DETECTOR_MODE:-heuristic}
+      TOKENIZERS_PARALLELISM: "false"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - test_model_cache:/models
+      # Mount checkpoints for ML mode (excluded from Docker image by .dockerignore)
+      - ./ai/text_detector/checkpoints:/app/ai/text_detector/checkpoints:ro
+    networks:
+      - test

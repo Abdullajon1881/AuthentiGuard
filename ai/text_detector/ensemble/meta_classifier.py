@@ -284,12 +284,22 @@ class MetaClassifier:
     @classmethod
     def load(cls, directory: Path) -> "MetaClassifier":
         obj = cls()
-        with (directory / "xgb.pkl").open("rb") as f:
-            obj._xgb = pickle.load(f)
-        with (directory / "platt.pkl").open("rb") as f:
-            obj._platt = pickle.load(f)
-        with (directory / "isotonic.pkl").open("rb") as f:
-            obj._isotonic = pickle.load(f)
-        obj._is_fitted = True
-        log.info("meta_classifier_loaded", directory=str(directory))
+        try:
+            with (directory / "xgb.pkl").open("rb") as f:
+                obj._xgb = pickle.load(f)
+            with (directory / "platt.pkl").open("rb") as f:
+                obj._platt = pickle.load(f)
+            with (directory / "isotonic.pkl").open("rb") as f:
+                obj._isotonic = pickle.load(f)
+            obj._is_fitted = True
+            log.info("meta_classifier_loaded", directory=str(directory))
+        except Exception as exc:
+            log.error(
+                "meta_classifier_load_failed",
+                directory=str(directory),
+                error=str(exc),
+            )
+            # Return unfitted instance — TextDetector.analyze() will use
+            # heuristic weighted average fallback instead of crashing.
+            obj._is_fitted = False
         return obj
