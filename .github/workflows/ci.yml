@@ -157,15 +157,65 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── Deploy to staging ──────────────────────────────────────
-  deploy-staging:
-    name: Deploy to Staging
+  # ── Release to staging (human-in-the-loop rollout) ────────
+  #
+  # ROLLOUT IS NOT AUTOMATED. This job prepares the release artifacts:
+  #
+  #   1. alembic upgrade head against the staging DB    (automated)
+  #   2. docker build + push container images           (automated)
+  #   3. kubectl apply to the cluster                   (MANUAL — see docs/DEPLOY.md)
+  #
+  # Wiring step 3 would require new architecture (AWS OIDC credentials,
+  # ECR push instead of GHCR, kustomize image substitution, kubeconfig
+  # generation, rollout-status polling). Until that work is done, step 3
+  # is a documented human operator task. The job succeeds when the two
+  # automated steps complete; the final step writes a manual-rollout
+  # checklist to the Actions run summary so the operator knows exactly
+  # what to run next.
+  release-staging:
+    name: Release to Staging (human-in-the-loop rollout)
     runs-on: ubuntu-latest
     needs: build-images
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
     environment: staging
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend deps (for alembic)
+        working-directory: backend
+        run: pip install -r requirements.txt
+      - name: Run Alembic migrations (staging DB)
+        working-directory: backend
+        env:
+          # Alembic reads this via backend/alembic/env.py → app.core.config.
+          # Must be set in the GitHub "staging" Environment secrets.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # The Settings validator still requires these; provide harmless
+          # placeholder values so `get_settings()` loads cleanly during
+          # the migration step. Real runtime values live in k8s secrets.
+          APP_ENV: staging
+          APP_SECRET_KEY: ${{ secrets.APP_SECRET_KEY }}
+          JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          CELERY_BROKER_URL: ${{ secrets.REDIS_URL }}
+          CELERY_RESULT_BACKEND: ${{ secrets.REDIS_URL }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # Defense-in-depth: the Settings validator will reject this if
+          # APP_ENV=production, but staging must never set it either.
+          ALLOW_DB_CREATE_ALL: "false"
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error title=Missing DATABASE_URL secret::Set DATABASE_URL in the 'staging' GitHub Environment."
+            exit 1
+          fi
+          alembic upgrade head
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -183,18 +233,89 @@ jobs:
           context: ./frontend
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:staging
-      - name: Deploy to staging cluster
-        run: echo "Deploy to k8s staging — configure with your cluster credentials"
+      - name: Manual rollout checklist (staging)
+        # This step does NOT apply anything to the cluster.
+        # It writes the operator's next-step checklist to the
+        # GitHub Actions run summary. Cluster rollout is a human
+        # operation — see docs/DEPLOY.md for the full runbook.
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          {
+            echo "## Staging release artifacts ready — MANUAL ROLLOUT REQUIRED"
+            echo
+            echo "Automated steps completed:"
+            echo "- [x] Alembic migrations (\`alembic upgrade head\` against staging DB)"
+            echo "- [x] Backend image pushed: \`${REGISTRY}/${IMAGE_PREFIX}-backend:staging\`"
+            echo "- [x] Frontend image pushed: \`${REGISTRY}/${IMAGE_PREFIX}-frontend:staging\`"
+            echo
+            echo "**Cluster rollout is NOT automated.** An operator must run:"
+            echo
+            echo '```bash'
+            echo "# See docs/DEPLOY.md for the full runbook, including prerequisites"
+            echo "# (aws eks update-kubeconfig, kustomize image substitution, etc.)."
+            echo "kubectl -n authentiguard rollout restart deploy/api deploy/worker-cpu deploy/frontend"
+            echo "kubectl -n authentiguard rollout status  deploy/api --timeout=5m"
+            echo "kubectl -n authentiguard rollout status  deploy/worker-cpu --timeout=5m"
+            echo "kubectl -n authentiguard rollout status  deploy/frontend --timeout=5m"
+            echo '```'
+            echo
+            echo "Rollback: \`kubectl -n authentiguard rollout undo deploy/<name>\`"
+            echo
+            echo "Commit: \`${GIT_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Manual rollout required::Artifacts prepared. See the run summary and docs/DEPLOY.md for the operator checklist."
 
-  # ── Deploy to production ───────────────────────────────────
-  deploy-production:
-    name: Deploy to Production
+  # ── Release to production (human-in-the-loop rollout) ─────
+  #
+  # ROLLOUT IS NOT AUTOMATED. Same structure as release-staging.
+  # See docs/DEPLOY.md for the operator runbook.
+  release-production:
+    name: Release to Production (human-in-the-loop rollout)
     runs-on: ubuntu-latest
     needs: build-images
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: production
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend deps (for alembic)
+        working-directory: backend
+        run: pip install -r requirements.txt
+      - name: Run Alembic migrations (production DB)
+        working-directory: backend
+        env:
+          # REQUIRED: set in the "production" GitHub Environment secrets.
+          # Point at the production read/write endpoint. Migrations run
+          # BEFORE image push so a bad migration never ships code.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          APP_ENV: production
+          APP_SECRET_KEY: ${{ secrets.APP_SECRET_KEY }}
+          JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          CELERY_BROKER_URL: ${{ secrets.REDIS_URL }}
+          CELERY_RESULT_BACKEND: ${{ secrets.REDIS_URL }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # MUST stay false in production — the Settings validator will
+          # reject the startup if this is ever set to "true".
+          ALLOW_DB_CREATE_ALL: "false"
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error title=Missing DATABASE_URL secret::Set DATABASE_URL in the 'production' GitHub Environment."
+            exit 1
+          fi
+          echo "Running alembic upgrade head against production DB..."
+          alembic upgrade head
+          echo "Alembic migrations complete."
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -216,5 +337,55 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
-      - name: Deploy to production cluster
-        run: echo "Deploy to k8s production — configure with your cluster credentials"
+      - name: Manual rollout checklist (production)
+        # This step does NOT apply anything to the cluster.
+        # It writes the operator's next-step checklist to the
+        # GitHub Actions run summary. Production rollout is a human
+        # operation — see docs/DEPLOY.md for the full runbook.
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          {
+            echo "## Production release artifacts ready — MANUAL ROLLOUT REQUIRED"
+            echo
+            echo "Automated steps completed:"
+            echo "- [x] Alembic migrations (\`alembic upgrade head\` against production DB)"
+            echo "- [x] Backend image pushed: \`${REGISTRY}/${IMAGE_PREFIX}-backend:latest\` (+ \`${GIT_SHA}\`)"
+            echo "- [x] Frontend image pushed: \`${REGISTRY}/${IMAGE_PREFIX}-frontend:latest\` (+ \`${GIT_SHA}\`)"
+            echo
+            echo "**Cluster rollout is NOT automated.** An operator must run:"
+            echo
+            echo '```bash'
+            echo "# 1. Prerequisites (see docs/DEPLOY.md \"Operator prerequisites\")"
+            echo "aws eks update-kubeconfig --name authentiguard-prod --region us-east-1"
+            echo
+            echo "# 2. Confirm migrations landed before code (already done by CI, but verify)"
+            echo "kubectl -n authentiguard run --rm -it --restart=Never alembic-check \\"
+            echo "  --image=\${REGISTRY}/${IMAGE_PREFIX}-backend:${GIT_SHA} -- \\"
+            echo "  alembic current"
+            echo
+            echo "# 3. Roll out the new image"
+            echo "kubectl -n authentiguard set image deploy/api       api=\${REGISTRY}/${IMAGE_PREFIX}-backend:${GIT_SHA}"
+            echo "kubectl -n authentiguard set image deploy/worker-cpu worker=\${REGISTRY}/${IMAGE_PREFIX}-backend:${GIT_SHA}"
+            echo "kubectl -n authentiguard set image deploy/frontend  frontend=\${REGISTRY}/${IMAGE_PREFIX}-frontend:${GIT_SHA}"
+            echo
+            echo "# 4. Wait for rollouts"
+            echo "kubectl -n authentiguard rollout status deploy/api         --timeout=10m"
+            echo "kubectl -n authentiguard rollout status deploy/worker-cpu  --timeout=10m"
+            echo "kubectl -n authentiguard rollout status deploy/frontend    --timeout=10m"
+            echo '```'
+            echo
+            echo "**Rollback** (if any rollout fails):"
+            echo '```bash'
+            echo "kubectl -n authentiguard rollout undo deploy/api"
+            echo "kubectl -n authentiguard rollout undo deploy/worker-cpu"
+            echo "kubectl -n authentiguard rollout undo deploy/frontend"
+            echo '```'
+            echo
+            echo "Commit: \`${GIT_SHA}\`"
+            echo
+            echo "See \`docs/DEPLOY.md\` for the full runbook, pre-rollout checklist, and post-rollout smoke tests."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Manual rollout required::Production artifacts prepared. See the run summary and docs/DEPLOY.md for the operator checklist."

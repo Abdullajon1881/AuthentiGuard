@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.6
 # ── Stage 1: base with build tools ────────────────────────────
 FROM python:3.11-slim AS base
 
@@ -8,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Stage 2: Python dependencies (cached separately from code) ─
+# ── Stage 2: Python dependencies (split into layers by volatility) ─
 FROM base AS deps
 
 WORKDIR /build
@@ -18,24 +19,44 @@ COPY backend/requirements.txt backend-req.txt
 COPY requirements/base.txt requirements/base.txt
 COPY requirements/ml.txt requirements/ml.txt
 
-# CPU-only PyTorch (~200MB vs ~2GB with CUDA)
-RUN pip install --no-cache-dir --prefix=/install \
+# Layer A: CPU-only PyTorch (~200MB) — rarely changes, biggest single install
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install --prefix=/install \
     torch==2.3.0 torchvision==0.18.0 torchaudio==2.3.0 \
     --index-url https://download.pytorch.org/whl/cpu
 
-# Backend deps + ML deps (--prefer-binary for speed)
-RUN pip install --no-cache-dir --prefer-binary --prefix=/install \
-    -r backend-req.txt \
+# Layer B: Heavy ML deps (transformers, spacy, sklearn) — rarely change
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install --prefer-binary --prefix=/install \
+    transformers==4.41.0 \
+    tokenizers==0.19.1 \
+    accelerate==0.30.0 \
+    spacy==3.7.4 \
+    scikit-learn==1.4.2 \
+    xgboost==2.0.3 \
+    scipy==1.13.0 \
+    numpy==1.26.4
+
+# Layer C: Remaining ML deps (audio/video/image/onnx/calibration)
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install --prefer-binary --prefix=/install \
     -r requirements/ml.txt
 
+# Layer D: Backend deps (fastapi, sqlalchemy, celery, etc.) — changes more often
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install --prefer-binary --prefix=/install \
+    -r backend-req.txt
+
 # spaCy language model for L2 stylometry (POS tagging, syntax features, ~12MB)
-RUN pip install --no-cache-dir --prefix=/install \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install --prefix=/install \
     https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
 
 # DeBERTa-v3-small pretrained model for L3 semantic layer (~180MB)
 # Downloaded at build time so fine-tuning can start without runtime download.
 # Activates only when a fine-tuned checkpoint is placed at the checkpoint path.
-RUN PYTHONPATH=/install/lib/python3.11/site-packages \
+RUN --mount=type=cache,target=/root/.cache/huggingface,sharing=locked \
+    PYTHONPATH=/install/lib/python3.11/site-packages \
     python -c "from huggingface_hub import snapshot_download; \
     snapshot_download('microsoft/deberta-v3-small', local_dir='/models/deberta_v3_small', \
     ignore_patterns=['*.onnx', '*.ot', 'flax_*', 'tf_*', 'rust_*'])"

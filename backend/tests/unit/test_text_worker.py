@@ -81,7 +81,13 @@ class TestResolveText:
 
     @pytest.mark.asyncio
     async def test_fetches_from_s3_when_no_input_text(self):
-        """When job has s3_key but no input_text, fetch from S3."""
+        """When job has s3_key but no input_text, fetch from S3.
+
+        `_resolve_text` imports `get_settings` and `boto3` lazily inside
+        the function body (not at module scope), so we patch them at
+        their real locations: `app.core.config.get_settings` and
+        `boto3.client`.
+        """
         from app.workers.text_worker import _resolve_text
 
         job = _make_mock_job(input_text=None, s3_key="uploads/user1/doc.txt")
@@ -100,7 +106,7 @@ class TestResolveText:
         mock_settings.S3_ENDPOINT_URL = None
         mock_settings.S3_BUCKET_UPLOADS = "uploads"
 
-        with patch("app.workers.text_worker.get_settings", return_value=mock_settings), \
+        with patch("app.core.config.get_settings", return_value=mock_settings), \
              patch("boto3.client", return_value=mock_s3):
             text = await _resolve_text(job)
             assert text == "Fetched content from S3 storage"

@@ -22,6 +22,40 @@ log = structlog.get_logger(__name__)
 # Module-level detector — loaded once per worker process, not per task
 _detector = None
 
+# ── Canonical text checkpoint path ───────────────────────────────────
+# This is the ONE path the production text detector is loaded from.
+# Both this worker and any alternate dispatch layer (see
+# ai/ensemble_engine/routing/dispatcher.py) must agree on it, or we end
+# up with a split-brain where different code paths silently run different
+# models. If this constant changes, update the dispatcher guard at the
+# same time — a unit test enforces the agreement.
+TEXT_CHECKPOINT_SUBPATH = Path("ai") / "text_detector" / "checkpoints" / "transformer_v3_hard" / "phase1"
+
+
+def resolve_text_checkpoint_root() -> Path | None:
+    """Resolve the project root that contains the canonical text checkpoint.
+
+    Tries, in order: AUTHENTIC_PROJECT_ROOT env var, Docker WORKDIR `/app`,
+    and a few relative ancestors of this file. Returns the first root that
+    has `ai/text_detector/` on disk, or None if none match. Used by both
+    the worker loader and the checkpoint-unity test.
+    """
+    import os
+    here = os.path.dirname(__file__)
+    candidates: list[str] = []
+    env_root = os.environ.get("AUTHENTIC_PROJECT_ROOT")
+    if env_root:
+        candidates.append(env_root)
+    candidates.append("/app")
+    candidates.extend(
+        os.path.abspath(os.path.join(here, *up))
+        for up in ([], ["..", "..", ".."], ["..", "..", "..", ".."])
+    )
+    for root in candidates:
+        if os.path.isdir(os.path.join(root, "ai", "text_detector")):
+            return Path(root)
+    return None
+
 
 class _DevFallbackDetector:
     """Heuristic detector for local dev when AI models are unavailable.
@@ -294,14 +328,21 @@ def _get_detector():
         load_start = _time.monotonic()
         try:
             import sys, os
-            root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
+            root_path = resolve_text_checkpoint_root()
+            if root_path is None:
+                # No project root found — fall through to the except below.
+                raise RuntimeError(
+                    "Could not locate ai/text_detector/ under any candidate root"
+                )
+            root = str(root_path)
             if root not in sys.path:
                 sys.path.insert(0, root)
             from ai.text_detector.ensemble.text_detector import TextDetector  # type: ignore
 
-            # Resolve L3 (DistilBERT) checkpoint — trained with adversarial hard examples
-            checkpoint_dir = os.path.join(root, "ai", "text_detector", "checkpoints", "transformer_v3_hard", "phase1")
-            transformer_ckpt = Path(checkpoint_dir) if os.path.isdir(checkpoint_dir) else None
+            # Resolve L3 (DistilBERT) checkpoint from the single canonical
+            # constant. See TEXT_CHECKPOINT_SUBPATH at the top of this module.
+            checkpoint_dir = root_path / TEXT_CHECKPOINT_SUBPATH
+            transformer_ckpt = checkpoint_dir if checkpoint_dir.is_dir() else None
 
             if transformer_ckpt:
                 log.info("text_detector_loading", mode="L1+L2+L3", checkpoint=str(transformer_ckpt))

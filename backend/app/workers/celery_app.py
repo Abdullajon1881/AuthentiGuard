@@ -64,7 +64,10 @@ celery_app.conf.update(
     task_time_limit=180,         # hard kill after 180s
 
     # ── Worker memory management ─────────────────────────────────
-    worker_max_memory_per_child=512_000,  # 512 MB — recycle workers that leak
+    # No Celery-level per-child memory cap: the loaded DistilBERT + tokenizer +
+    # spaCy models can exceed 700MB RSS, so a tight cap causes OOM recycling
+    # mid-task. Rely on container-level memory limits (see docker-compose*.yml
+    # `deploy.resources.limits.memory`, currently 4G for workers).
     worker_max_tasks_per_child=1000,      # recycle after 1000 tasks as safety net
 
     # ── Result retention ───────────────────────────────────────

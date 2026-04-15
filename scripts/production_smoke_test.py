@@ -143,11 +143,11 @@ class SmokeTestRunner:
             self._check("Database healthy", data.get("checks", {}).get("database") == "ok")
             self._check("Redis healthy", data.get("checks", {}).get("redis") == "ok")
 
+            # Note: the backend process doesn't load the detector — workers do.
+            # The /health detector_mode reflects the API process only, so it's
+            # informational here. The authoritative mode comes from job results.
             mode = data.get("checks", {}).get("detector_mode", "unknown")
-            if self.expect_ml:
-                self._check("Detector mode is ML", mode == "ml", f"got: {mode}")
-            else:
-                self._check("Detector mode reported", mode in ("ml", "fallback", "heuristic"), f"mode: {mode}")
+            self._check("Detector mode reported in /health", mode in ("ml", "fallback", "heuristic", "unknown"), f"api-process mode: {mode}")
         except Exception as exc:
             self._check("Health endpoint reachable", False, str(exc))
 
@@ -168,7 +168,8 @@ class SmokeTestRunner:
         mode = result.get("detector_mode", "unknown")
 
         self._check("AI sample completed", result.get("status") == "completed")
-        self._check("AI sample score > 0.5", score > 0.5, f"score={score:.3f}")
+        threshold = 0.7 if self.expect_ml else 0.5
+        self._check(f"AI sample score > {threshold}", score > threshold, f"score={score:.3f}")
         self._check("AI sample labeled AI or UNCERTAIN", label in ("AI", "UNCERTAIN"), f"label={label}")
 
         if self.expect_ml:
@@ -185,7 +186,8 @@ class SmokeTestRunner:
         label = result.get("label", "")
 
         self._check("Human sample completed", result.get("status") == "completed")
-        self._check("Human sample score < 0.5", score < 0.5, f"score={score:.3f}")
+        threshold = 0.4 if self.expect_ml else 0.5
+        self._check(f"Human sample score < {threshold}", score < threshold, f"score={score:.3f}")
         self._check("Human sample labeled HUMAN or UNCERTAIN", label in ("HUMAN", "UNCERTAIN"), f"label={label}")
 
     def check_inference_consistency(self, n: int = 20):

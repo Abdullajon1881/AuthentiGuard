@@ -108,3 +108,11 @@ spec:
       remoteRef: {key: "authentiguard/prod", property: "S3_BUCKET_UPLOADS"}
     - secretKey: S3_BUCKET_REPORTS
       remoteRef: {key: "authentiguard/prod", property: "S3_BUCKET_REPORTS"}
+    # Outgoing alert webhook — consumed by app.workers.alerting.
+    # Required in production so detector-fallback, high-failure-rate,
+    # and high-queue-depth alerts actually reach a human. Without this
+    # set, alerts still land in structlog but nothing external notifies.
+    # Store a Slack-compatible incoming-webhook URL (or any generic
+    # endpoint) under `authentiguard/prod::ALERT_WEBHOOK_URL`.
+    - secretKey: ALERT_WEBHOOK_URL
+      remoteRef: {key: "authentiguard/prod", property: "ALERT_WEBHOOK_URL"}

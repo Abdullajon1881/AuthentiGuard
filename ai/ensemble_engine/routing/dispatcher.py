@@ -79,14 +79,20 @@ class DetectorRegistry:
         log.info("loading_detector", content_type=content_type)
 
         if content_type in ("text", "code"):
-            from ..text_detector.ensemble.text_detector import TextDetector  # type: ignore
-            det = TextDetector(
-                transformer_checkpoint=self._checkpoint_base / "text_detector/checkpoints/transformer/phase3",
-                adversarial_checkpoint=self._checkpoint_base / "text_detector/checkpoints/adversarial/phase3",
-                meta_checkpoint=self._checkpoint_base / "text_detector/checkpoints/meta",
+            # Text/code detection is served ONLY by
+            # backend/app/workers/text_worker.py::_get_detector, which loads
+            # the canonical TEXT_CHECKPOINT_SUBPATH (transformer_v3_hard/phase1).
+            # This branch used to load a DIFFERENT checkpoint
+            # (transformer/phase3) which does not exist in the repo, causing a
+            # silent split-brain if anything routed through the dispatcher.
+            # Do NOT re-enable this without unifying the checkpoint path
+            # through `backend.app.workers.text_worker.TEXT_CHECKPOINT_SUBPATH`
+            # and updating tests/unit/test_text_checkpoint_unity.py.
+            raise NotImplementedError(
+                "DetectorRegistry does not serve text/code in production. "
+                "Use app.workers.text_worker._get_detector() instead — it is "
+                "the single authoritative text detector load path."
             )
-            det.load_models()
-            return det
 
         elif content_type == "audio":
             from ..audio_detector.audio_detector import AudioDetector  # type: ignore

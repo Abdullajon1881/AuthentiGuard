@@ -5,11 +5,25 @@ Pydantic Settings validates types and raises on startup if required vars are mis
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import AnyHttpUrl, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _read_secret_file(env_var: str) -> str | None:
+    """Read a Docker-style `*_FILE` secret if the env var is set.
+
+    Returns the file contents (stripped of trailing whitespace/newline) or None.
+    Errors intentionally surface — a misconfigured secret path must fail loudly.
+    """
+    path = os.environ.get(env_var)
+    if not path:
+        return None
+    return Path(path).read_text(encoding="utf-8").rstrip("\r\n")
 
 
 class Settings(BaseSettings):
@@ -35,11 +49,16 @@ class Settings(BaseSettings):
     REDIS_URL: str       # redis://:pass@host:port/db
 
     # ── Object storage ─────────────────────────────────────────
+    # Credentials are resolved in this order (first non-empty wins):
+    #   1. AWS_ACCESS_KEY_ID_FILE / AWS_SECRET_ACCESS_KEY_FILE  (Docker secrets)
+    #   2. AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY            (plain env — dev/CI only)
+    # Production must use the file-backed path so credentials never appear in
+    # `docker inspect`, process env listings, or container image layers.
     S3_BUCKET_UPLOADS: str  = "ag-uploads"
     S3_BUCKET_REPORTS: str  = "ag-reports"
     S3_ENDPOINT_URL:   str | None = None   # None = real AWS
-    AWS_ACCESS_KEY_ID: str
-    AWS_SECRET_ACCESS_KEY: str
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
     AWS_REGION: str = "us-east-1"
 
     # ── Auth ───────────────────────────────────────────────────
@@ -62,6 +81,14 @@ class Settings(BaseSettings):
     # "heuristic" = use lightweight heuristic fallback (no GPU/model deps)
     DETECTOR_MODE: Literal["ml", "heuristic"] = "ml"
 
+    # ── Schema bootstrap ───────────────────────────────────────
+    # Dev-only escape hatch. When True, startup runs SQLAlchemy
+    # `Base.metadata.create_all` so a fresh dev machine can boot without
+    # running Alembic. Production MUST leave this False — Alembic is the
+    # single source of truth, and a prod boot with this flag set will fail
+    # fast (see validator + main.py lifespan).
+    ALLOW_DB_CREATE_ALL: bool = False
+
     # ── File upload ────────────────────────────────────────────
     MAX_UPLOAD_SIZE_MB:     int = 50
     ALLOWED_TEXT_EXTENSIONS: list[str] = [".txt", ".md", ".pdf", ".docx"]
@@ -77,6 +104,17 @@ class Settings(BaseSettings):
 
     # ── Encryption ────────────────────────────────────────────
     ENCRYPTION_KEY: str   # Fernet key for at-rest encryption
+
+    # ── Alerting ──────────────────────────────────────────────
+    # Generic outgoing-webhook URL. The alerting task posts a small JSON
+    # body ({"text": "...", "severity": "...", "alert": "..."}) when a
+    # detector-fallback, high-failure-rate, or high-queue-depth condition
+    # is detected. Leave blank to disable webhook notifications (alerts
+    # still land in structlog). A Slack-compatible "Incoming Webhook" URL
+    # works out of the box. Production deployments without Prometheus/
+    # Alertmanager must set this so somebody actually gets paged.
+    ALERT_WEBHOOK_URL: str = ""
+    ALERT_WEBHOOK_TIMEOUT_SECONDS: float = 5.0
 
     # ── CORS ──────────────────────────────────────────────────
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
@@ -102,6 +140,42 @@ class Settings(BaseSettings):
         if len(v) < 32:
             raise ValueError("JWT_SECRET_KEY must be at least 32 characters for HS256 security")
         return v
+
+    @model_validator(mode="after")
+    def _resolve_s3_credentials_from_files(self) -> "Settings":
+        """Load S3 creds from Docker-secret files when `*_FILE` env vars are set.
+
+        Only fills in empty fields — an explicit plain env value always wins so
+        dev and CI (which set plain values) are unaffected.
+        """
+        file_user = _read_secret_file("AWS_ACCESS_KEY_ID_FILE")
+        if file_user and not self.AWS_ACCESS_KEY_ID:
+            object.__setattr__(self, "AWS_ACCESS_KEY_ID", file_user)
+        file_secret = _read_secret_file("AWS_SECRET_ACCESS_KEY_FILE")
+        if file_secret and not self.AWS_SECRET_ACCESS_KEY:
+            object.__setattr__(self, "AWS_SECRET_ACCESS_KEY", file_secret)
+        if not self.AWS_ACCESS_KEY_ID or not self.AWS_SECRET_ACCESS_KEY:
+            raise ValueError(
+                "S3 credentials missing: set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY "
+                "or AWS_ACCESS_KEY_ID_FILE/AWS_SECRET_ACCESS_KEY_FILE"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _forbid_create_all_in_production(self) -> "Settings":
+        """Fail loud if a production build leaves the dev-only create_all gate on.
+
+        Catches the case where someone ships with `ALLOW_DB_CREATE_ALL=true`
+        in their prod env file. Alembic must be the only schema authority in
+        production; create_all running alongside migrations causes silent
+        schema drift on the first post-launch column change.
+        """
+        if self.APP_ENV == "production" and self.ALLOW_DB_CREATE_ALL:
+            raise ValueError(
+                "ALLOW_DB_CREATE_ALL must be False in production. "
+                "Alembic is the source of truth; run `alembic upgrade head` instead."
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_rate_limit_ordering(self) -> "Settings":

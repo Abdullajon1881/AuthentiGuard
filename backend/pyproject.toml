@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "authentiguard-backend"
 version = "0.1.0"
 description = "AuthentiGuard API Gateway and backend services"
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.111.0",

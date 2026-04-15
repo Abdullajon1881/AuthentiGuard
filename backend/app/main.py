@@ -27,10 +27,17 @@ DEMO_USER_EMAIL = "demo@authentiguard.local"
 
 
 async def _ensure_db_tables():
-    """Create all tables if they don't exist (idempotent)."""
+    """Dev-only: create tables via SQLAlchemy metadata.
+
+    Alembic is the source of truth for schema in every non-dev environment.
+    This helper is only invoked from the lifespan when
+    `settings.ALLOW_DB_CREATE_ALL` is explicitly True, which is rejected by
+    the Settings validator when `APP_ENV=production`. Production boots must
+    run `alembic upgrade head` before the API starts.
+    """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    log.info("db_tables_ensured")
+    log.info("db_tables_ensured_via_create_all_dev_only")
 
 
 async def _ensure_minio_buckets(settings):
@@ -93,8 +100,20 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     log.info("starting_up", env=settings.APP_ENV, version=settings.APP_VERSION)
 
-    # Ensure DB tables exist (idempotent — safe for all environments)
-    await _ensure_db_tables()
+    # Schema bootstrap.
+    # Alembic is the source of truth. We only fall back to create_all when
+    # `ALLOW_DB_CREATE_ALL=true`, which is blocked in production by the
+    # Settings validator. Any other path (staging, prod) must have already
+    # run `alembic upgrade head` as part of the deploy.
+    if settings.ALLOW_DB_CREATE_ALL:
+        log.warning(
+            "using_create_all_bootstrap_dev_only",
+            env=settings.APP_ENV,
+            hint="Run `alembic upgrade head` instead for any non-dev environment.",
+        )
+        await _ensure_db_tables()
+    else:
+        log.info("skipping_create_all_alembic_is_source_of_truth", env=settings.APP_ENV)
 
     # Ensure S3/MinIO buckets exist
     try:

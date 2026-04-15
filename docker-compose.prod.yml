@@ -20,6 +20,19 @@ volumes:
   caddy_config:
   model_cache:
 
+# ── Secrets (file-backed; never committed — see secrets/README.md) ──
+# Root credentials are bootstrap/admin only. Backend and worker use a
+# dedicated MinIO service account with least-privilege bucket access.
+secrets:
+  minio_root_user:
+    file: ./secrets/minio_root_user
+  minio_root_password:
+    file: ./secrets/minio_root_password
+  s3_app_access_key:
+    file: ./secrets/s3_app_access_key
+  s3_app_secret_key:
+    file: ./secrets/s3_app_secret_key
+
 services:
 
   # ── Caddy (reverse proxy + auto-HTTPS) ─────────────────────
@@ -96,9 +109,15 @@ services:
     container_name: ag_minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
+    # Credentials sourced from Docker secrets (./secrets/minio_root_*).
+    # MinIO supports *_FILE suffixed env vars natively — the value is read
+    # from the file path at container startup. No plain-text defaults.
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
+    secrets:
+      - minio_root_user
+      - minio_root_password
     volumes:
       - minio_data:/data
     networks:
@@ -124,6 +143,18 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-authentiguard}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-authentiguard}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       S3_ENDPOINT_URL: http://minio:9000
+      # S3 creds come from Docker secrets, not plain env. config.py reads
+      # *_FILE vars and populates AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.
+      AWS_ACCESS_KEY_ID_FILE: /run/secrets/s3_app_access_key
+      AWS_SECRET_ACCESS_KEY_FILE: /run/secrets/s3_app_secret_key
+      # Outgoing alert webhook (Slack-compatible or generic JSON endpoint).
+      # Consumed by app.workers.alerting._post_alert_webhook. MUST be set in
+      # .env.production for detector-fallback, high-failure-rate, and
+      # queue-depth alerts to reach a human in production.
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    secrets:
+      - s3_app_access_key
+      - s3_app_secret_key
     depends_on:
       postgres:
         condition: service_healthy
@@ -159,11 +190,21 @@ services:
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-authentiguard}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-authentiguard}
       S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID_FILE: /run/secrets/s3_app_access_key
+      AWS_SECRET_ACCESS_KEY_FILE: /run/secrets/s3_app_secret_key
       DETECTOR_MODE: ${DETECTOR_MODE:-ml}
       HF_HUB_DOWNLOAD_TIMEOUT: "60"
       TRANSFORMERS_OFFLINE: "1"
       HF_HUB_OFFLINE: "1"
       TOKENIZERS_PARALLELISM: "false"
+      # The worker runs app.workers.alerting.check_health on the `text`
+      # queue every 60s (scheduled by beat). It reads this URL to post
+      # alerts externally; leaving it empty means alerts only land in
+      # structlog. Required in production.
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    secrets:
+      - s3_app_access_key
+      - s3_app_secret_key
     depends_on:
       redis:
         condition: service_healthy

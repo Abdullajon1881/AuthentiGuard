@@ -31,6 +31,9 @@ out/
 .env.*
 !.env.example
 !.env.production.example
+secrets/*
+!secrets/.gitkeep
+!secrets/README.md
 
 # ML artifacts (large — use DVC)
 *.pt
@@ -43,6 +46,7 @@ checkpoints/
 datasets/human/
 datasets/ai-generated/
 datasets/adversarial/
+datasets/processed/
 
 # Terraform state (use remote backend)
 *.tfstate
