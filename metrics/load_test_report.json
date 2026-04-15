@@ -1,0 +1,334 @@
+{
+  "stage": 4,
+  "timestamp_utc": "2026-04-15T18:06:48.796042+00:00",
+  "git_sha": "2adb063c6af851c3220485c4e3acfd98174e8f01",
+  "machine": {
+    "cpu_count_logical": 20,
+    "cpu_count_physical": 14,
+    "total_memory_gb": 16.8,
+    "platform": "Windows-11-10.0.22621-SP0",
+    "python": "3.12.10"
+  },
+  "detector": {
+    "model_version": "3.0-stage2-lr_meta-isotonic",
+    "active_layers": [
+      0,
+      1,
+      2
+    ],
+    "lr_meta_loaded": true,
+    "lr_threshold": 0.5,
+    "load_seconds": 13.01,
+    "checkpoint": "D:/Authentic/authentiguard/ai/text_detector/checkpoints/transformer_v3_hard/phase1"
+  },
+  "test_parameters": {
+    "levels": [
+      10,
+      50,
+      100,
+      200
+    ],
+    "duration_s_per_level": 15.0,
+    "level_workers": {
+      "10": 8,
+      "50": 16,
+      "100": 20,
+      "200": 24
+    }
+  },
+  "load_test_results": [
+    {
+      "target_rps": 10,
+      "duration_s": 15.0,
+      "n_workers": 8,
+      "wall_s": 15.207,
+      "n_attempted": 151,
+      "n_completed": 151,
+      "n_errors": 0,
+      "error_rate": 0.0,
+      "actual_rps": 9.929,
+      "throughput_ratio": 0.993,
+      "latency_e2e_ms": {
+        "n": 151,
+        "mean": 160.21,
+        "min": 64.1,
+        "max": 457.85,
+        "p50": 138.22,
+        "p95": 353.37,
+        "p99": 397.09
+      },
+      "latency_inference_ms": {
+        "n": 151,
+        "mean": 160.19,
+        "min": 64.1,
+        "max": 457.85,
+        "p50": 138.22,
+        "p95": 353.37,
+        "p99": 397.09
+      },
+      "latency_queue_ms": {
+        "n": 151,
+        "mean": 0.02,
+        "min": 0.0,
+        "max": 1.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.5
+      },
+      "cpu_percent": {
+        "mean": 1326.84,
+        "max": 1513.3,
+        "samples": 16
+      },
+      "rss_mb": {
+        "mean_mb": 1665.1,
+        "max_mb": 1754.2
+      },
+      "threads": {
+        "mean": 173.2,
+        "max": 182
+      },
+      "label_counts": {
+        "AI": 101,
+        "HUMAN": 50
+      },
+      "error_kinds": {},
+      "status": "STABLE"
+    },
+    {
+      "target_rps": 50,
+      "duration_s": 15.0,
+      "n_workers": 16,
+      "wall_s": 50.335,
+      "n_attempted": 751,
+      "n_completed": 751,
+      "n_errors": 0,
+      "error_rate": 0.0,
+      "actual_rps": 14.92,
+      "throughput_ratio": 0.298,
+      "latency_e2e_ms": {
+        "n": 751,
+        "mean": 18220.44,
+        "min": 548.88,
+        "max": 35470.2,
+        "p50": 18016.52,
+        "p95": 33715.81,
+        "p99": 35145.9
+      },
+      "latency_inference_ms": {
+        "n": 751,
+        "mean": 1062.13,
+        "min": 460.12,
+        "max": 1955.24,
+        "p50": 933.61,
+        "p95": 1827.72,
+        "p99": 1898.73
+      },
+      "latency_queue_ms": {
+        "n": 751,
+        "mean": 17158.31,
+        "min": 0.0,
+        "max": 34580.47,
+        "p50": 17048.3,
+        "p95": 32768.65,
+        "p99": 34177.55
+      },
+      "cpu_percent": {
+        "mean": 1563.97,
+        "max": 1673.4,
+        "samples": 50
+      },
+      "rss_mb": {
+        "mean_mb": 1772.6,
+        "max_mb": 1894.3
+      },
+      "threads": {
+        "mean": 289.8,
+        "max": 294
+      },
+      "label_counts": {
+        "AI": 494,
+        "HUMAN": 250,
+        "UNCERTAIN": 7
+      },
+      "error_kinds": {},
+      "status": "SATURATED"
+    },
+    {
+      "target_rps": 100,
+      "duration_s": 15.0,
+      "n_workers": 20,
+      "wall_s": 62.114,
+      "n_attempted": 856,
+      "n_completed": 856,
+      "n_errors": 0,
+      "error_rate": 0.0,
+      "actual_rps": 13.781,
+      "throughput_ratio": 0.138,
+      "latency_e2e_ms": {
+        "n": 856,
+        "mean": 27185.82,
+        "min": 1045.97,
+        "max": 53478.28,
+        "p50": 27283.18,
+        "p95": 50593.96,
+        "p99": 52536.33
+      },
+      "latency_inference_ms": {
+        "n": 856,
+        "mean": 1423.91,
+        "min": 550.85,
+        "max": 2651.12,
+        "p50": 1213.78,
+        "p95": 2427.7,
+        "p99": 2560.81
+      },
+      "latency_queue_ms": {
+        "n": 856,
+        "mean": 25761.9,
+        "min": 0.0,
+        "max": 52598.84,
+        "p50": 26023.94,
+        "p95": 49335.73,
+        "p99": 51205.8
+      },
+      "cpu_percent": {
+        "mean": 1573.7,
+        "max": 1702.4,
+        "samples": 62
+      },
+      "rss_mb": {
+        "mean_mb": 1808.6,
+        "max_mb": 1939.7
+      },
+      "threads": {
+        "mean": 344.7,
+        "max": 347
+      },
+      "label_counts": {
+        "AI": 572,
+        "HUMAN": 282,
+        "UNCERTAIN": 2
+      },
+      "error_kinds": {},
+      "status": "SATURATED"
+    },
+    {
+      "target_rps": 200,
+      "duration_s": 15.0,
+      "n_workers": 24,
+      "wall_s": 62.523,
+      "n_attempted": 368,
+      "n_completed": 368,
+      "n_errors": 0,
+      "error_rate": 0.0,
+      "actual_rps": 5.886,
+      "throughput_ratio": 0.029,
+      "latency_e2e_ms": {
+        "n": 368,
+        "mean": 32384.52,
+        "min": 3645.47,
+        "max": 60616.77,
+        "p50": 34559.9,
+        "p95": 58973.37,
+        "p99": 60286.85
+      },
+      "latency_inference_ms": {
+        "n": 368,
+        "mean": 3993.06,
+        "min": 1784.8,
+        "max": 6425.05,
+        "p50": 4828.9,
+        "p95": 6157.69,
+        "p99": 6245.47
+      },
+      "latency_queue_ms": {
+        "n": 368,
+        "mean": 28391.47,
+        "min": 0.0,
+        "max": 57976.88,
+        "p50": 28635.9,
+        "p95": 56740.97,
+        "p99": 57809.77
+      },
+      "cpu_percent": {
+        "mean": 1449.21,
+        "max": 1537.5,
+        "samples": 62
+      },
+      "rss_mb": {
+        "mean_mb": 2012.5,
+        "max_mb": 2106.2
+      },
+      "threads": {
+        "mean": 674.8,
+        "max": 681
+      },
+      "label_counts": {
+        "AI": 223,
+        "HUMAN": 144,
+        "UNCERTAIN": 1
+      },
+      "error_kinds": {},
+      "status": "SATURATED"
+    }
+  ],
+  "failure_scenarios": [
+    {
+      "name": "meta_missing",
+      "passed": true,
+      "notes": "renamed meta_classifier.joblib | renamed meta_calibrator.joblib | fallback detector loaded with _lr_meta=None | inference ok: score=0.2187 label=HUMAN",
+      "elapsed_s": 2.98
+    },
+    {
+      "name": "checkpoint_missing",
+      "passed": true,
+      "notes": "L3 correctly skipped when checkpoint missing | inference ok (2-layer): score=0.1320 label=HUMAN",
+      "elapsed_s": 2.74
+    },
+    {
+      "name": "disk_full_logs",
+      "passed": true,
+      "notes": "log_prediction returned cleanly on unwritable dir | inference result preserved: score=0.0100 label=HUMAN",
+      "elapsed_s": 0.19
+    },
+    {
+      "name": "slow_disk_logs",
+      "passed": true,
+      "notes": "infer 130.4ms, log 500.7ms (injected 500ms)",
+      "elapsed_s": 0.63
+    },
+    {
+      "name": "high_memory",
+      "passed": true,
+      "notes": "baseline 1593MB -> after alloc 2617MB | inference ok under memory pressure: score=0.0100",
+      "elapsed_s": 0.5
+    }
+  ],
+  "timeout_behavior": {
+    "name": "timeout_behavior",
+    "passed": true,
+    "notes": "caller received TimeoutError on 10ms deadline (expected) | background request completed ok: label=AI | fresh request ok: score=0.0100 label=HUMAN | thread delta: 14",
+    "elapsed_s": 0.44
+  },
+  "resource_limits_observed": {
+    "max_rss_mb_across_levels": 2106.2,
+    "max_cpu_percent_across_levels": 1702.4,
+    "max_threads_across_levels": 681
+  },
+  "recommendations": {
+    "max_stable_throughput_rps_single_process": 10,
+    "max_observed_rps_single_process": 14.92,
+    "recommended_worker_concurrency": 4,
+    "recommended_replicas_for_100_rps": 7,
+    "recommended_memory_limit_mb": 2527,
+    "recommended_cpu_cores_per_worker": 17.27,
+    "notes": [
+      "Single-process ceiling measured with threading on shared TextDetector.",
+      "PyTorch releases GIL on forward passes; threading gives partial parallelism.",
+      "For higher throughput, scale horizontally (more Celery replicas), each with its own detector process.",
+      "Recommendations include +20% memory headroom over observed peak."
+    ]
+  },
+  "overall_status": "YELLOW"
+}
