@@ -339,21 +339,37 @@ def _get_detector():
                 sys.path.insert(0, root)
             from ai.text_detector.ensemble.text_detector import TextDetector  # type: ignore
 
-            # Resolve L3 (DistilBERT) checkpoint from the single canonical
-            # constant. See TEXT_CHECKPOINT_SUBPATH at the top of this module.
+            # Resolve L3 (DeBERTa-v3-small) checkpoint from the single
+            # canonical constant. See TEXT_CHECKPOINT_SUBPATH at the top.
             checkpoint_dir = root_path / TEXT_CHECKPOINT_SUBPATH
             transformer_ckpt = checkpoint_dir if checkpoint_dir.is_dir() else None
 
+            # Stage 2 (optional): learned LR meta + isotonic calibrator.
+            # Both files must exist for the detector to activate the
+            # learned path. If either is missing, the detector falls
+            # back to the Stage 1 fixed-weight combiner — no breaking
+            # change for deployments without the meta artifacts baked in.
+            meta_base = root_path / "ai" / "text_detector" / "checkpoints"
+            meta_lr_candidate = meta_base / "meta_classifier.joblib"
+            meta_cal_candidate = meta_base / "meta_calibrator.joblib"
+            meta_lr_path = meta_lr_candidate if meta_lr_candidate.exists() else None
+            meta_cal_path = meta_cal_candidate if meta_cal_candidate.exists() else None
+
             if transformer_ckpt:
-                log.info("text_detector_loading", mode="L1+L2+L3", checkpoint=str(transformer_ckpt))
+                mode_tag = "L1+L2+L3"
+                if meta_lr_path and meta_cal_path:
+                    mode_tag += "+learned_meta"
+                log.info("text_detector_loading", mode=mode_tag, checkpoint=str(transformer_ckpt))
             else:
                 log.warning("text_detector_loading", mode="L1+L2 only", reason="no L3 checkpoint found")
 
             _detector = TextDetector(
                 transformer_checkpoint=transformer_ckpt,
                 adversarial_checkpoint=None,    # L4 not yet trained
-                meta_checkpoint=None,           # meta not yet trained
+                meta_checkpoint=None,           # legacy XGBoost meta — not used
                 device="cpu",
+                meta_lr_path=meta_lr_path,
+                meta_calibrator_path=meta_cal_path,
             )
             _detector.load_models()
             active = len(_detector._active_layers)

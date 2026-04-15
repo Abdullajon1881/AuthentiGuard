@@ -72,6 +72,8 @@ class TextDetector:
         adversarial_checkpoint: Path | None = None,
         meta_checkpoint: Path | None = None,
         device: str | None = None,
+        meta_lr_path: Path | None = None,
+        meta_calibrator_path: Path | None = None,
     ) -> None:
         self._layer1 = PerplexityLayer(device=device)
         self._layer2 = StylometryLayer(use_spacy=True)
@@ -84,6 +86,17 @@ class TextDetector:
         self._loaded = False
         self._active_layers: list[int] = []  # indices of active layers
         self._device = device
+        # Stage 2: learned LogisticRegression meta + isotonic calibration.
+        # Both paths are optional. If both load successfully, analyze()
+        # uses the calibrated probability as the ensemble score. If
+        # either fails to load, the detector falls back to the Stage 1
+        # fixed-weight combiner below — no breaking change.
+        self._meta_lr_path = meta_lr_path
+        self._meta_calibrator_path = meta_calibrator_path
+        self._lr_meta = None          # sklearn LogisticRegression
+        self._lr_calibrator = None    # sklearn CalibratedClassifierCV
+        self._lr_threshold: float = 0.5
+        self._lr_feature_order: list[str] = ["l1_score", "l2_score", "l3_score"]
 
     def load_models(self) -> None:
         """Load all model weights. Call once at startup."""
@@ -128,6 +141,85 @@ class TextDetector:
         else:
             log.warning("meta_classifier_checkpoint_not_found — using heuristic fallback")
 
+        # ── Stage 2: learned LR meta + isotonic calibration (optional) ──
+        # Both the LR and the calibrator must load for the learned path
+        # to activate. If either file is missing or fails to unpickle,
+        # we fall back to the Stage 1 fixed-weight combiner — the
+        # detector never breaks on a missing meta artifact.
+        #
+        # Auto-discovery: if the caller did not pass explicit meta paths
+        # (e.g. Stage 1 evaluate_end_to_end.py, which predates Stage 2
+        # and has no meta-related kwargs), try to find them next to the
+        # transformer checkpoint. The Stage 2 training script writes
+        # meta_classifier.joblib / meta_calibrator.joblib under
+        # ai/text_detector/checkpoints/, which is the parent of
+        # transformer_checkpoint.parent. This keeps evaluate_end_to_end.py
+        # untouched while still letting the meta activate end-to-end.
+        if (
+            self._meta_lr_path is None
+            and self._meta_calibrator_path is None
+            and self._transformer_checkpoint is not None
+        ):
+            try:
+                _meta_base = self._transformer_checkpoint.parent.parent
+                _cand_lr = _meta_base / "meta_classifier.joblib"
+                _cand_cal = _meta_base / "meta_calibrator.joblib"
+                if _cand_lr.exists() and _cand_cal.exists():
+                    self._meta_lr_path = _cand_lr
+                    self._meta_calibrator_path = _cand_cal
+                    log.info(
+                        "lr_meta_auto_discovered",
+                        lr_path=str(_cand_lr),
+                        calibrator_path=str(_cand_cal),
+                    )
+            except Exception as exc:
+                log.warning("lr_meta_auto_discovery_failed", error=str(exc))
+
+        if (
+            self._meta_lr_path is not None
+            and self._meta_calibrator_path is not None
+            and self._meta_lr_path.exists()
+            and self._meta_calibrator_path.exists()
+        ):
+            try:
+                import joblib
+                lr_obj = joblib.load(self._meta_lr_path)
+                cal_bundle = joblib.load(self._meta_calibrator_path)
+                # cal_bundle is the dict written by train_meta_classifier.py:
+                #   {"calibrator": CalibratedClassifierCV,
+                #    "threshold": float, "feature_order": [...]}
+                if isinstance(cal_bundle, dict) and "calibrator" in cal_bundle:
+                    self._lr_meta = lr_obj
+                    self._lr_calibrator = cal_bundle["calibrator"]
+                    self._lr_threshold = float(cal_bundle.get("threshold", 0.5))
+                    self._lr_feature_order = list(
+                        cal_bundle.get("feature_order", self._lr_feature_order)
+                    )
+                    log.info(
+                        "lr_meta_loaded",
+                        lr_path=str(self._meta_lr_path),
+                        calibrator_path=str(self._meta_calibrator_path),
+                        threshold=self._lr_threshold,
+                        feature_order=self._lr_feature_order,
+                    )
+                else:
+                    log.warning(
+                        "lr_meta_calibrator_bundle_malformed — "
+                        "expected dict with 'calibrator' key; falling back"
+                    )
+                    self._lr_meta = None
+                    self._lr_calibrator = None
+            except Exception as exc:
+                log.error("lr_meta_load_failed", error=str(exc))
+                self._lr_meta = None
+                self._lr_calibrator = None
+        else:
+            log.info(
+                "lr_meta_not_present",
+                reason="meta_classifier.joblib / meta_calibrator.joblib not on disk; "
+                       "using Stage 1 fixed-weight combiner",
+            )
+
         active_count = len(self._active_layers)
         log.info("text_detector_ready", active_layers=active_count,
                  layers=self._active_layers)
@@ -165,32 +257,83 @@ class TextDetector:
         # ── Build feature vector ────────────────────────────────
         feature_vector = build_feature_vector(layer_results, text)
 
-        # ── Meta-classifier or fallback ─────────────────────────
-        if self._meta._is_fitted:
-            score = self._meta.predict(feature_vector)
-        else:
-            # Fallback: weighted average. Weights for the 3-layer
-            # production path were FIT on val data via grid search.
-            # Source: scripts/fit_ensemble_weights.py -> fit_weights.json
-            #   git_sha: fc64addaa53bfd47e98bfb14db7c6ebea887a00f
-            #   val F1 at these weights + threshold 0.41: 0.99692
-            #   test F1 verify (not used for selection): 0.99447
-            # DO NOT edit the 3-layer weights by hand — re-run the fit
-            # script and update this file and fit_weights.json in lockstep.
-            # The 2-layer and 4-layer rows are unfit.
-            active_count = len(layer_results)
-            if active_count == 2:
-                weights = [0.50, 0.50]
-            elif active_count == 3:
-                weights = [0.20, 0.35, 0.45]
+        # ── Score selection: learned meta > XGB meta > fixed weights ──
+        # Order of precedence:
+        #   1. Stage 2: LR + isotonic calibrator (if both loaded)
+        #   2. Legacy: XGBoost MetaClassifier (if fitted — unused in prod)
+        #   3. Stage 1: fixed-weight combiner (authoritative fallback)
+        used_lr_meta = False
+        if self._lr_meta is not None and self._lr_calibrator is not None:
+            # Stage 2: learned LogisticRegression + isotonic calibration.
+            # Input features are the per-layer raw scores in the order
+            # frozen at training time (stored in _lr_feature_order).
+            by_name = {r.layer_name: r for r in layer_results}
+
+            def _layer_score(layer_name: str) -> float:
+                r = by_name.get(layer_name)
+                return float(r.score) if (r is not None and not r.error) else 0.5
+
+            feature_map = {
+                "l1_score": _layer_score("perplexity"),
+                "l2_score": _layer_score("stylometry"),
+                "l3_score": _layer_score("transformer"),
+            }
+            try:
+                import numpy as _np
+                X_row = _np.array(
+                    [[feature_map[f] for f in self._lr_feature_order]],
+                    dtype=_np.float64,
+                )
+                score = float(self._lr_calibrator.predict_proba(X_row)[0, 1])
+                score = max(0.01, min(0.99, score))
+                used_lr_meta = True
+            except Exception as exc:
+                # If the learned path blows up at inference time, do
+                # NOT crash the request — fall through to the fixed
+                # weights below. This is the backward-compat guarantee.
+                log.error("lr_meta_inference_failed_falling_back", error=str(exc))
+                used_lr_meta = False
+
+        if not used_lr_meta:
+            if self._meta._is_fitted:
+                score = self._meta.predict(feature_vector)
             else:
-                weights = [0.20, 0.20, 0.35, 0.25]
-            scores = [r.score for r in layer_results]
-            score = sum(s * w for s, w in zip(scores, weights))
-            score = max(0.01, min(0.99, score))
+                # Stage 1 fallback: weighted average. Weights for the 3-layer
+                # production path were FIT on val data via grid search.
+                # Source: scripts/fit_ensemble_weights.py -> fit_weights.json
+                #   git_sha: fc64addaa53bfd47e98bfb14db7c6ebea887a00f
+                #   val F1 at these weights + threshold 0.41: 0.99692
+                #   test F1 verify (not used for selection): 0.99447
+                # DO NOT edit the 3-layer weights by hand — re-run the fit
+                # script and update this file and fit_weights.json in lockstep.
+                # The 2-layer and 4-layer rows are unfit.
+                active_count = len(layer_results)
+                if active_count == 2:
+                    weights = [0.50, 0.50]
+                elif active_count == 3:
+                    weights = [0.20, 0.35, 0.45]
+                else:
+                    weights = [0.20, 0.20, 0.35, 0.25]
+                scores = [r.score for r in layer_results]
+                score = sum(s * w for s, w in zip(scores, weights))
+                score = max(0.01, min(0.99, score))
 
         active_count = len(layer_results)
-        label      = _score_to_label(score, active_layers=active_count)
+        # Label mapping: the LR meta has its own (fit) threshold on
+        # calibrated probabilities, so it bypasses the fixed
+        # _THRESHOLDS_BY_LAYERS table that was tuned for the Stage 1
+        # fixed-weight score distribution. UNCERTAIN band is a symmetric
+        # +/-0.05 window around the learned threshold — narrow because
+        # calibrated probabilities are supposed to mean what they say.
+        if used_lr_meta:
+            if score >= self._lr_threshold + 0.05:
+                label = "AI"
+            elif score <= self._lr_threshold - 0.05:
+                label = "HUMAN"
+            else:
+                label = "UNCERTAIN"
+        else:
+            label = _score_to_label(score, active_layers=active_count)
         confidence = _score_to_confidence(score)
 
         # ── Evidence summary for the UI ─────────────────────────

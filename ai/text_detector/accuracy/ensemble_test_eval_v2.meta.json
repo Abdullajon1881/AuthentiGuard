@@ -1,0 +1,95 @@
+{
+  "git_sha": "7ce1c149f5d79cc97eedd561aefdc7f7cfc6e27d",
+  "timestamp_utc": "2026-04-15T17:28:29.094913+00:00",
+  "checkpoint": "ai/text_detector/checkpoints/transformer_v3_hard/phase1",
+  "data_split": "datasets/processed_v2/test.parquet",
+  "data_split_sha256": "2af685854bc385373a124d7e64dd9bb322833402787c67559876acf4bbdb652b",
+  "n_samples": 3482,
+  "active_layers": [
+    0,
+    1,
+    2
+  ],
+  "meta_classifier_loaded": false,
+  "adversarial_layer_loaded": false,
+  "device": "cpu",
+  "metrics": {
+    "f1": 0.9517937219730942,
+    "precision": 0.9223248234655079,
+    "recall": 0.9832078749276202,
+    "confusion_matrix": [
+      [
+        1612,
+        143
+      ],
+      [
+        29,
+        1698
+      ]
+    ],
+    "auroc": 0.9701819765514033
+  },
+  "label_distribution": {
+    "AI": 1841,
+    "HUMAN": 1640,
+    "UNCERTAIN": 1
+  },
+  "per_source_f1": {
+    "gpt_wiki": {
+      "n": 1362,
+      "f1": 0.9541639767591995
+    },
+    "email_extra": {
+      "n": 39,
+      "f1": null,
+      "note": "single-class \u2014 F1 undefined"
+    },
+    "wiki_formal": {
+      "n": 115,
+      "f1": null,
+      "note": "single-class \u2014 F1 undefined"
+    },
+    "dmitva": {
+      "n": 787,
+      "f1": 0.9852216748768473
+    },
+    "artem9k": {
+      "n": 437,
+      "f1": 0.9446494464944649
+    },
+    "email": {
+      "n": 91,
+      "f1": null,
+      "note": "single-class \u2014 F1 undefined"
+    },
+    "adv_humanized_ai": {
+      "n": 212,
+      "f1": null,
+      "note": "single-class \u2014 F1 undefined"
+    },
+    "adv_mixed": {
+      "n": 169,
+      "f1": 0.8415841584158416
+    },
+    "adv_aiified_human": {
+      "n": 137,
+      "f1": null,
+      "note": "single-class \u2014 F1 undefined"
+    },
+    "wiki": {
+      "n": 99,
+      "f1": null,
+      "note": "single-class \u2014 F1 undefined"
+    },
+    "artem9k_hn": {
+      "n": 34,
+      "f1": null,
+      "note": "single-class \u2014 F1 undefined"
+    }
+  },
+  "wallclock_seconds": {
+    "load": 15.83,
+    "analyze": 1777.07,
+    "total": 1792.95
+  }
+}

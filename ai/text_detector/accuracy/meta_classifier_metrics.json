@@ -1,0 +1,77 @@
+{
+  "git_sha": "7ce1c149f5d79cc97eedd561aefdc7f7cfc6e27d",
+  "timestamp_utc": "2026-04-15T14:24:58.748948+00:00",
+  "meta_dataset": "datasets/meta/meta_train.parquet",
+  "n_train": 1600,
+  "n_val": 400,
+  "train_label_distribution": [
+    820,
+    780
+  ],
+  "val_label_distribution": [
+    205,
+    195
+  ],
+  "feature_order": [
+    "l1_score",
+    "l2_score",
+    "l3_score"
+  ],
+  "lr_coef": [
+    2.751692748337262,
+    0.07981527211452512,
+    8.769070629334015
+  ],
+  "lr_intercept": -5.6077257978873885,
+  "lr_class_weight": "balanced",
+  "random_state": 42,
+  "metrics_raw_lr_on_val": {
+    "f1_at_0.5": 0.9896907216494846,
+    "precision_at_0.5": 0.9948186528497409,
+    "recall_at_0.5": 0.9846153846153847,
+    "roc_auc": 0.9987492182614134,
+    "confusion_matrix_at_0.5": [
+      [
+        204,
+        1
+      ],
+      [
+        3,
+        192
+      ]
+    ]
+  },
+  "metrics_calibrated_on_val_at_fit_threshold": {
+    "threshold": 0.5,
+    "f1": 0.9948717948717949,
+    "precision": 0.9948717948717949,
+    "recall": 0.9948717948717949,
+    "roc_auc": 0.9993621013133208,
+    "confusion_matrix": [
+      [
+        204,
+        1
+      ],
+      [
+        1,
+        194
+      ]
+    ]
+  },
+  "metrics_calibrated_on_val_at_0.5": {
+    "threshold": 0.5,
+    "f1": 0.9948717948717949,
+    "precision": 0.9948717948717949,
+    "recall": 0.9948717948717949,
+    "confusion_matrix": [
+      [
+        204,
+        1
+      ],
+      [
+        1,
+        194
+      ]
+    ]
+  }
+}

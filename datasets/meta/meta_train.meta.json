@@ -1,0 +1,29 @@
+{
+  "git_sha": "7ce1c149f5d79cc97eedd561aefdc7f7cfc6e27d",
+  "timestamp_utc": "2026-04-15T14:24:00.177266+00:00",
+  "source_split": "datasets/processed/val.parquet",
+  "source_sha256": "fc19231ff8d1d740ac82866ed9535f42aa80115b0eacb620dfec99d6dd7da0c6",
+  "checkpoint": "ai/text_detector/checkpoints/transformer_v3_hard/phase1",
+  "n_samples": 2000,
+  "active_layers": [
+    0,
+    1,
+    2
+  ],
+  "columns": [
+    "l1_score",
+    "l2_score",
+    "l3_score",
+    "final_score_current",
+    "label"
+  ],
+  "label_distribution": {
+    "0": 1025,
+    "1": 975
+  },
+  "wallclock_seconds": {
+    "load": 14.78,
+    "analyze": 1057.95,
+    "total": 1072.77
+  }
+}

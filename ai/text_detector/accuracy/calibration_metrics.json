@@ -1,0 +1,22 @@
+{
+  "git_sha": "7ce1c149f5d79cc97eedd561aefdc7f7cfc6e27d",
+  "timestamp_utc": "2026-04-15T14:24:58.748948+00:00",
+  "method": "isotonic",
+  "cv": "prefit",
+  "n_val": 400,
+  "ece_bins": 10,
+  "ece_raw_lr": 0.015046017661232017,
+  "ece_calibrated": 0.0,
+  "ece_baseline_fixed_weight": 0.239103,
+  "brier_raw_lr": 0.007509400684741064,
+  "brier_calibrated": 0.004772321428571429,
+  "brier_baseline_fixed_weight": 0.06948198175,
+  "brier_improvement_vs_baseline": 0.06471,
+  "best_threshold": 0.5,
+  "threshold_search_range": [
+    0.3,
+    0.7,
+    0.01
+  ],
+  "notes": "Baseline Brier is computed against `final_score_current` (the fixed-weight ensemble score already in meta_train.parquet), clipped to [0, 1]. Stage 2 acceptance requires brier_calibrated < brier_baseline_fixed_weight and ece_calibrated < 0.05."
+}
