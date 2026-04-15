@@ -48,6 +48,14 @@ datasets/ai-generated/
 datasets/adversarial/
 datasets/processed/
 
+# Stage 3 runtime state — logs and daily metrics
+# (training_distribution.json under ai/text_detector/accuracy/ IS tracked —
+#  it is part of the model bundle, not runtime state)
+logs/
+metrics/daily_metrics.json
+metrics/drift.json
+metrics/*.tmp
+
 # Terraform state (use remote backend)
 *.tfstate
 *.tfstate.backup

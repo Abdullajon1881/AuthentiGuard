@@ -413,7 +413,27 @@ class TextDetectionWorker(BaseDetectionWorker):
         return text
 
     def run_detection(self, detector: Any, input_data: str, job: DetectionJob) -> Any:
-        return detector.analyze(input_data)
+        result = detector.analyze(input_data)
+        # Stage 3 observability: log the prediction for drift / audit.
+        # This call is exception-safe — any failure emits a structlog
+        # warning and returns without affecting the returned result.
+        # Never put anything that can raise between detector.analyze
+        # and this return — the invariant is that the worker returns
+        # the same value it always returned.
+        try:
+            from ..observability.prediction_log import log_prediction
+            try:
+                from ai.text_detector.ensemble.text_detector import MODEL_VERSION
+            except Exception:
+                MODEL_VERSION = "unknown"
+            log_prediction(
+                text=input_data,
+                result=result,
+                model_version=MODEL_VERSION,
+            )
+        except Exception as exc:  # pragma: no cover — belt-and-braces
+            log.warning("prediction_log_import_failed", error=str(exc))
+        return result
 
     def build_result(
         self,

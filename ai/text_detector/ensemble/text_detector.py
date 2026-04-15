@@ -22,6 +22,13 @@ from .meta_classifier import MetaClassifier, EnsembleResult, build_feature_vecto
 
 log = structlog.get_logger(__name__)
 
+# Production model-version string. Bumped manually whenever the
+# inference stack changes in a way that would affect score semantics
+# (new weights, new calibrator, new layers, threshold change).
+# Consumed by backend/app/observability/prediction_log.py so every
+# logged prediction is traceable to a specific model configuration.
+MODEL_VERSION = "3.0-stage2-lr_meta-isotonic"
+
 # Score thresholds — adaptive based on number of active layers.
 #
 # 3-layer AI threshold was FIT on val data via grid search.

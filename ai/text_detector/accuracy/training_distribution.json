@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "git_sha": "4d0fb00c246b86dc23ed889199fe2c396ea847b2",
+  "timestamp_utc": "2026-04-15T17:46:00.432562+00:00",
+  "source_dataset": "D:/Authentic/authentiguard/datasets/meta/meta_train.parquet",
+  "source_dataset_sha256": "1264691338a966feab1d2bc72315c1e5fea7359305cec3904a04c9ad0d16cd90",
+  "checkpoint": "D:/Authentic/authentiguard/ai/text_detector/checkpoints/transformer_v3_hard/phase1",
+  "meta_classifier_path": "D:/Authentic/authentiguard/ai/text_detector/checkpoints/meta_classifier.joblib",
+  "meta_calibrator_path": "D:/Authentic/authentiguard/ai/text_detector/checkpoints/meta_calibrator.joblib",
+  "feature_order": [
+    "l1_score",
+    "l2_score",
+    "l3_score"
+  ],
+  "n_samples": 2000,
+  "psi": {
+    "bucket_edges": [
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0
+    ],
+    "counts": [
+      1029,
+      0,
+      0,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      969
+    ],
+    "proportions": [
+      0.5145,
+      0.0,
+      0.0,
+      0.0005,
+      0.0,
+      0.0,
+      0.0005,
+      0.0,
+      0.0,
+      0.4845
+    ],
+    "n_buckets": 10
+  },
+  "prob_stats": {
+    "min": 0.0,
+    "mean": 0.48414719785867044,
+    "max": 1.0,
+    "std": 0.49402842724203216,
+    "median": 0.02857142857142857
+  },
+  "label_distribution": {
+    "human_0": 1025,
+    "ai_1": 975
+  },
+  "notes": "Reference distribution for Population Stability Index drift monitoring. Bucket edges are FROZEN at 10 equal-width bins over [0, 1]. Regenerate this file whenever the meta classifier or calibrator is retrained."
+}
