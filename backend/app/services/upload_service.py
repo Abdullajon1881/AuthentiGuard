@@ -23,9 +23,12 @@ log = structlog.get_logger(__name__)
 # Max size per content type (bytes).
 # Tightened 2026-04 — the 100k-character text-processing guardrail is the
 # primary limit for the text detector; these caps bound the upload stage.
+# Text and code were further tightened to 1 MB each because the detectors
+# reject anything larger in practice and a smaller cap shrinks the attack
+# surface for memory-exhaustion uploads.
 MAX_SIZES = {
-    ContentType.TEXT:  3   * 1024 * 1024,   # 3 MB
-    ContentType.CODE:  2   * 1024 * 1024,   # 2 MB
+    ContentType.TEXT:  1   * 1024 * 1024,   # 1 MB
+    ContentType.CODE:  1   * 1024 * 1024,   # 1 MB
     ContentType.IMAGE: 10  * 1024 * 1024,   # 10 MB
     ContentType.AUDIO: 50  * 1024 * 1024,   # 50 MB
     ContentType.VIDEO: 200 * 1024 * 1024,   # 200 MB

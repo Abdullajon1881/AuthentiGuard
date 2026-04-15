@@ -152,8 +152,8 @@ def test_size_one_byte_over_limit_raises_413():
 @pytest.mark.parametrize(
     "ct,expected_mb",
     [
-        (ContentType.TEXT, 3),
-        (ContentType.CODE, 2),
+        (ContentType.TEXT, 1),
+        (ContentType.CODE, 1),
         (ContentType.IMAGE, 10),
         (ContentType.AUDIO, 50),
         (ContentType.VIDEO, 200),
