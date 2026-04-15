@@ -1,0 +1,43 @@
+{
+  "git_sha": "fc64addaa53bfd47e98bfb14db7c6ebea887a00f",
+  "timestamp_utc": "2026-04-15T13:47:40.391862+00:00",
+  "checkpoint": "ai/text_detector/checkpoints/transformer_v3_hard/phase1",
+  "data_split": "datasets/processed/test.parquet",
+  "data_split_sha256": "215ee1cecc8e412c24946ba04e842779f7bfa9acac9f4a88e24874cc67c4634d",
+  "n_samples": 2000,
+  "active_layers": [
+    0,
+    1,
+    2
+  ],
+  "meta_classifier_loaded": false,
+  "adversarial_layer_loaded": false,
+  "device": "cpu",
+  "metrics": {
+    "f1": 0.9944695827048768,
+    "precision": 0.9959718026183283,
+    "recall": 0.9929718875502008,
+    "confusion_matrix": [
+      [
+        1000,
+        4
+      ],
+      [
+        7,
+        989
+      ]
+    ],
+    "auroc": 0.9977409638554217
+  },
+  "label_distribution": {
+    "HUMAN": 942,
+    "AI": 993,
+    "UNCERTAIN": 65
+  },
+  "per_source_f1": {},
+  "wallclock_seconds": {
+    "load": 13.07,
+    "analyze": 1588.63,
+    "total": 1601.74
+  }
+}

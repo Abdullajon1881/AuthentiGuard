@@ -1,0 +1,28 @@
+{
+  "git_sha": "fc64addaa53bfd47e98bfb14db7c6ebea887a00f",
+  "timestamp_utc": "2026-04-15T13:19:36.210671+00:00",
+  "checkpoint": "ai/text_detector/checkpoints/transformer_v3_hard/phase1",
+  "val_split": "datasets/processed/val.parquet",
+  "val_split_sha256": "fc19231ff8d1d740ac82866ed9535f42aa80115b0eacb620dfec99d6dd7da0c6",
+  "test_split": "datasets/processed/test.parquet",
+  "test_split_sha256": "215ee1cecc8e412c24946ba04e842779f7bfa9acac9f4a88e24874cc67c4634d",
+  "n_val": 2000,
+  "n_test": 2000,
+  "grid_size": 9471,
+  "search_seconds": 8.16,
+  "total_seconds": 23.86,
+  "best_weights_l1_l2_l3": [
+    0.2,
+    0.35,
+    0.45
+  ],
+  "best_threshold": 0.41,
+  "val_f1": 0.99692,
+  "val_precision": 0.997945,
+  "val_recall": 0.995897,
+  "test_f1_verify_only": 0.99447,
+  "test_precision_verify_only": 0.995972,
+  "test_recall_verify_only": 0.992972,
+  "val_test_f1_gap": 0.00245,
+  "notes": "Weights and threshold selected on val only. Test F1 reported for verification \u2014 MUST NOT be used to re-pick hyperparameters. Tie-break rule: higher w3 preferred."
+}

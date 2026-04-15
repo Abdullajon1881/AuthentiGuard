@@ -4,11 +4,11 @@ AI-generated content detection focused on **text detection** as the production-r
 
 ## Current Status
 
-- **Text detection**: Production-ready. DistilBERT ensemble with F1 0.95, AUROC 0.98 (adversarial v3_hard checkpoint).
-- **Image/Audio/Video/Code**: Experimental. Models exist but are not production-tested.
-- **Passport/Provenance**: Disabled (not production-ready).
+- **Text detection (beta)**: 3-layer ensemble — L1 perplexity (GPT-2) + L2 stylometry (spaCy) + L3 DeBERTa-v3-small fine-tuned on an adversarial-augmented corpus. End-to-end F1 on held-out test splits: **0.9945** (v1, n=2000) and **0.9529** (v2 with adversarial subsets, n=3482). Combiner weights and AI threshold are fit on validation data. Full numbers and reproducibility recipe: [ai/text_detector/ACCURACY.md](ai/text_detector/ACCURACY.md). L4 adversarial and the XGBoost meta-classifier exist in code but are not loaded in production.
+- **Image / Audio / Video / Code**: not trained. Pretrained backbones only, no task fine-tuning, no persisted accuracy measurements. Do not rely on these endpoints for production decisions.
+- **Passport/Provenance**: disabled (not production-ready).
 
-See [SUMMARY.md](SUMMARY.md) for detailed status.
+See [SUMMARY.md](SUMMARY.md) for detailed status and [ai/text_detector/ACCURACY.md](ai/text_detector/ACCURACY.md) for the full measurement audit trail.
 
 AuthentiGuard is an adversarial AI detection platform that verifies whether content is human or AI-generated.
 

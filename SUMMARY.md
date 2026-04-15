@@ -3,12 +3,13 @@
 ## Production-Ready
 
 ### Text Detection
-- **4-layer ensemble**: perplexity, stylometry, DistilBERT transformer, adversarial detection
-- **Accuracy**: F1 0.9498, AUROC 0.9818 (v3_hard adversarial checkpoint, epoch 2)
-- **Non-adversarial baseline**: F1 0.9457, AUROC 0.9897 (v3 checkpoint, epoch 3 — not used in production)
-- **Adversarial robustness**: trained on hard adversarial samples (humanized AI, AI-ified human, mixed)
-- **Threshold-calibrated**: adaptive thresholds by active layer count (0.75 AI threshold at 4 layers)
-- **Training pipeline**: dataset v2 (34k samples, 5 sources), sample weighting, hard example mining
+- **3-layer ensemble** at inference: L1 perplexity (GPT-2) + L2 stylometry (spaCy) + L3 DeBERTa-v3-small (44M params, fine-tuned on an adversarial-augmented corpus). L4 adversarial and the XGBoost meta-classifier exist in code but are **not loaded** in production (`adversarial_checkpoint=None`, `meta_checkpoint=None` in `backend/app/workers/text_worker.py`).
+- **L3 alone, validation split, training-time eval (upward-biased because selection and reporting share a dataset)**: F1 **0.9498**, AUROC **0.9818**. Source: `ai/text_detector/checkpoints/transformer_v3_hard/phase1/checkpoint-3582/trainer_state.json`.
+- **L1+L2+L3 ensemble, held-out v1 test split, post-fit (AUTHORITATIVE)**: F1 **0.9945**, precision **0.9960**, recall **0.9930**, AUROC **0.9977**. Source: `ai/text_detector/accuracy/ensemble_test_eval.post_fit.json`. Confusion matrix `[[1000, 4], [7, 989]]` on 2000 rows.
+- **L1+L2+L3 ensemble, held-out v2 test split, post-fit (includes adversarial subsets, AUTHORITATIVE)**: F1 **0.9529**, precision 0.9243, recall **0.9832**, AUROC 0.9767. Source: `ai/text_detector/accuracy/ensemble_test_eval_v2.post_fit.json`. 3482 rows.
+- **Adversarial subset (`adv_mixed` in v2 test, n=169)**: F1 pre-fit **0.606** → post-fit **0.846** (+24 points from fitting weights and threshold on val).
+- **Combiner weights and AI threshold** are fit on val data via grid search (`scripts/fit_ensemble_weights.py`). Current values: weights `[0.20, 0.35, 0.45]` (L1/L2/L3), AI threshold `0.41`. Val F1 at these values: 0.9969. Val-test F1 gap: 0.00245. Source: `ai/text_detector/accuracy/fit_weights.json`.
+- **Full audit trail:** [`ai/text_detector/ACCURACY.md`](ai/text_detector/ACCURACY.md) — every number above is traceable to a persisted JSON artifact with git SHA and dataset SHA-256.
 
 ### Backend API
 - Auth: register, login, JWT refresh rotation, logout, password reset

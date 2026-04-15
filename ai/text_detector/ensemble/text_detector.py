@@ -23,10 +23,21 @@ from .meta_classifier import MetaClassifier, EnsembleResult, build_feature_vecto
 log = structlog.get_logger(__name__)
 
 # Score thresholds — adaptive based on number of active layers.
-# Fewer layers produce compressed score ranges, so thresholds tighten.
+#
+# 3-layer AI threshold was FIT on val data via grid search.
+# Source: scripts/fit_ensemble_weights.py -> fit_weights.json
+#   git_sha: fc64addaa53bfd47e98bfb14db7c6ebea887a00f
+#   val_split: datasets/processed/val.parquet (n=2000)
+#   val F1 at this threshold: 0.99692
+#   test F1 verify (not used for selection): 0.99447
+# DO NOT edit the 3-layer AI low-bound by hand — re-run the fit script
+# and update this file and fit_weights.json in lockstep.
+# UNCERTAIN band kept symmetric around the threshold at +/- 0.10.
+# The 2-layer and 4-layer rows are unfit (2-layer is fallback-only;
+# 4-layer is unreachable until an L4 checkpoint is trained).
 _THRESHOLDS_BY_LAYERS = {
     2: {"AI": (0.55, 1.00), "UNCERTAIN": (0.30, 0.55), "HUMAN": (0.00, 0.30)},
-    3: {"AI": (0.65, 1.00), "UNCERTAIN": (0.35, 0.65), "HUMAN": (0.00, 0.35)},
+    3: {"AI": (0.41, 1.00), "UNCERTAIN": (0.31, 0.41), "HUMAN": (0.00, 0.31)},
     4: {"AI": (0.75, 1.00), "UNCERTAIN": (0.40, 0.75), "HUMAN": (0.00, 0.40)},
 }
 
@@ -158,15 +169,20 @@ class TextDetector:
         if self._meta._is_fitted:
             score = self._meta.predict(feature_vector)
         else:
-            # Fallback: weighted average based on active layers
-            #   2 layers (L1+L2 MVP):    50/50 perplexity + stylometry
-            #   3 layers (L1+L2+L3):     25/25/50
-            #   4 layers (full ensemble): 20/20/35/25
+            # Fallback: weighted average. Weights for the 3-layer
+            # production path were FIT on val data via grid search.
+            # Source: scripts/fit_ensemble_weights.py -> fit_weights.json
+            #   git_sha: fc64addaa53bfd47e98bfb14db7c6ebea887a00f
+            #   val F1 at these weights + threshold 0.41: 0.99692
+            #   test F1 verify (not used for selection): 0.99447
+            # DO NOT edit the 3-layer weights by hand — re-run the fit
+            # script and update this file and fit_weights.json in lockstep.
+            # The 2-layer and 4-layer rows are unfit.
             active_count = len(layer_results)
             if active_count == 2:
                 weights = [0.50, 0.50]
             elif active_count == 3:
-                weights = [0.25, 0.25, 0.50]
+                weights = [0.20, 0.35, 0.45]
             else:
                 weights = [0.20, 0.20, 0.35, 0.25]
             scores = [r.score for r in layer_results]
