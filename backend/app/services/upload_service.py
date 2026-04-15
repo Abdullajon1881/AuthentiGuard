@@ -21,17 +21,31 @@ from ..models.models import ContentType
 log = structlog.get_logger(__name__)
 
 # Max size per content type (bytes).
-# Tightened 2026-04 — the 100k-character text-processing guardrail is the
-# primary limit for the text detector; these caps bound the upload stage.
-# Text and code were further tightened to 1 MB each because the detectors
-# reject anything larger in practice and a smaller cap shrinks the attack
-# surface for memory-exhaustion uploads.
+#
+# These caps are the SINGLE SOURCE OF TRUTH for what the file-upload
+# endpoint actually accepts. They are capped at 10 MB across the board
+# to match the global request-body limit enforced by main.py's
+# BodySizeLimit middleware — anything larger is rejected before it even
+# reaches this validator, so larger numbers here would be a lie.
+#
+# If large-media uploads (50+ MB audio, 200+ MB video) become a real
+# product requirement, the fix is NOT to raise these numbers alone — it
+# requires: (1) raising the body-size middleware cap (or adding a
+# per-route override), (2) switching `store_upload` from
+# `await file.read()` to a streaming SHA-256 + streaming boto3 upload,
+# and (3) validating magic bytes on the streamed prefix. Until that
+# work is scoped, image/audio/video share the same 10 MB ceiling.
+#
+# Text and code are tightened further to 1 MB because the text
+# detector's 100k-character processing guardrail makes anything larger
+# pointless and a smaller cap shrinks the memory-exhaustion attack
+# surface.
 MAX_SIZES = {
-    ContentType.TEXT:  1   * 1024 * 1024,   # 1 MB
-    ContentType.CODE:  1   * 1024 * 1024,   # 1 MB
-    ContentType.IMAGE: 10  * 1024 * 1024,   # 10 MB
-    ContentType.AUDIO: 50  * 1024 * 1024,   # 50 MB
-    ContentType.VIDEO: 200 * 1024 * 1024,   # 200 MB
+    ContentType.TEXT:  1  * 1024 * 1024,   # 1 MB
+    ContentType.CODE:  1  * 1024 * 1024,   # 1 MB
+    ContentType.IMAGE: 10 * 1024 * 1024,   # 10 MB (= body cap)
+    ContentType.AUDIO: 10 * 1024 * 1024,   # 10 MB (= body cap; was 50 MB but body cap rejected first)
+    ContentType.VIDEO: 10 * 1024 * 1024,   # 10 MB (= body cap; was 200 MB but body cap rejected first)
 }
 
 EXT_TO_CONTENT_TYPE: dict[str, ContentType] = {

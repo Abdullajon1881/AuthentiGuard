@@ -155,8 +155,8 @@ def test_size_one_byte_over_limit_raises_413():
         (ContentType.TEXT, 1),
         (ContentType.CODE, 1),
         (ContentType.IMAGE, 10),
-        (ContentType.AUDIO, 50),
-        (ContentType.VIDEO, 200),
+        (ContentType.AUDIO, 10),
+        (ContentType.VIDEO, 10),
     ],
 )
 def test_max_sizes_match_spec(ct, expected_mb):

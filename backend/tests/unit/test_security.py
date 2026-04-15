@@ -50,14 +50,21 @@ class TestAccessToken:
             assert payload["email"] == "test@test.com"
             assert payload["type"] == "access"
 
-    def test_token_has_jti(self):
+    def test_token_has_no_jti(self):
+        """Access tokens intentionally omit `jti`.
+
+        Regression guard against re-introducing the decorative `jti`
+        field. The revocation model is: short TTL (15 min) + revocable
+        refresh tokens. If a `jti` ever returns to the payload it MUST
+        be accompanied by a Redis blacklist lookup in
+        `decode_access_token`, otherwise it implies a revocation
+        capability that does not exist. See security.py docstring.
+        """
         from app.core.security import create_access_token, decode_access_token
         with self._patch_settings():
             token = create_access_token("user-123", "admin", "a@b.com")
             payload = decode_access_token(token)
-            assert "jti" in payload
-            # JTI should be a valid UUID
-            uuid.UUID(payload["jti"])
+            assert "jti" not in payload
 
     def test_invalid_token_raises(self):
         from app.core.security import decode_access_token

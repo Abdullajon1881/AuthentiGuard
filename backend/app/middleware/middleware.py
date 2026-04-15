@@ -137,13 +137,42 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 class AuditLogMiddleware(BaseHTTPMiddleware):
     """
     Step 36: Log every API call to the audit_logs table.
-    Non-blocking — audit writes happen in the background.
-    Errors in audit logging never affect the API response.
+    Non-blocking — audit writes happen in the background with a bounded
+    in-flight cap so a slow/unavailable Postgres cannot grow the
+    event-loop's task list without limit.
+
+    Backpressure policy (R2 fix, 2026-04):
+      - `_MAX_INFLIGHT` caps concurrent audit writes per process.
+      - Beyond the cap, writes are DROPPED, not queued. Dropping audit
+        entries under DB stress is preferable to OOM-ing the pod and
+        taking down the request path.
+      - Each wrapped write has a `_WRITE_TIMEOUT_SECONDS` hard deadline so
+        a hung DB call eventually releases its slot (otherwise slow
+        writes would permanently occupy the cap).
+      - Drops increment `AUDIT_LOG_DROPPED` and emit a structlog warning.
+      - The request path is never affected — audit failures have never
+        been allowed to fail a request, and that invariant is preserved.
     """
 
     # Paths that don't need audit logging
     _SKIP_PATHS = {"/health", "/docs", "/redoc", "/openapi.json",
                    "/metrics", "/favicon.ico"}
+
+    # Maximum concurrent audit writes per process. With DB pool size ~20
+    # and overflow ~40, at most ~60 writes can actually make progress at
+    # once; the rest queue on the connection pool. 200 gives ~3x headroom
+    # for normal spikes and hard-caps event-loop task growth.
+    _MAX_INFLIGHT = 200
+
+    # Hard deadline for a single audit write. Ensures a hung DB call
+    # cannot permanently occupy an inflight slot.
+    _WRITE_TIMEOUT_SECONDS = 10.0
+
+    def __init__(self, app):
+        super().__init__(app)
+        # Per-process counter of in-flight audit-write coroutines.
+        # Safe as a plain int because we're single-event-loop.
+        self._inflight = 0
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         if request.url.path in self._SKIP_PATHS:
@@ -176,11 +205,63 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 success=success,
             )
 
-            # Non-blocking async audit write
-            import asyncio
-            asyncio.create_task(
-                self._write_audit_log(request, status_code, success, error_msg, elapsed_ms)
+            # Bounded async audit write — drop if the in-flight cap is full.
+            if self._inflight >= self._MAX_INFLIGHT:
+                try:
+                    from ..core.metrics import AUDIT_LOG_DROPPED
+                    AUDIT_LOG_DROPPED.inc()
+                except Exception:
+                    pass
+                log.warning(
+                    "audit_log_dropped_backpressure",
+                    inflight=self._inflight,
+                    max_inflight=self._MAX_INFLIGHT,
+                    path=request.url.path,
+                    status=status_code,
+                )
+            else:
+                import asyncio
+                self._inflight += 1
+                asyncio.create_task(
+                    self._write_audit_log_bounded(
+                        request, status_code, success, error_msg, elapsed_ms
+                    )
+                )
+
+    async def _write_audit_log_bounded(
+        self,
+        request: Request,
+        status_code: int,
+        success: bool,
+        error_msg: str | None,
+        elapsed_ms: int,
+    ) -> None:
+        """Run `_write_audit_log` with a hard timeout and release the slot.
+
+        A hung DB call is caught by `asyncio.wait_for` after
+        `_WRITE_TIMEOUT_SECONDS` so the inflight slot is always released
+        in bounded time. Every exception path decrements `_inflight`.
+        """
+        import asyncio
+        try:
+            await asyncio.wait_for(
+                self._write_audit_log(
+                    request, status_code, success, error_msg, elapsed_ms
+                ),
+                timeout=self._WRITE_TIMEOUT_SECONDS,
             )
+        except asyncio.TimeoutError:
+            log.warning(
+                "audit_log_write_timeout",
+                timeout_s=self._WRITE_TIMEOUT_SECONDS,
+                path=request.url.path,
+            )
+        except Exception as exc:
+            # _write_audit_log already swallows its own errors, but
+            # belt-and-braces in case anything escapes wait_for.
+            log.warning("audit_log_wrapped_error", error=str(exc))
+        finally:
+            self._inflight -= 1
 
     async def _write_audit_log(
         self,

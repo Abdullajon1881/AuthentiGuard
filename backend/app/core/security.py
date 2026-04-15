@@ -11,7 +11,6 @@ This means stolen refresh tokens have a very short window of usefulness.
 from __future__ import annotations
 
 import secrets
-import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
@@ -49,7 +48,22 @@ def create_access_token(
 ) -> str:
     """
     Create a short-lived JWT access token.
-    Payload: sub (user_id), role, email, tier, exp, iat, jti (unique ID).
+
+    Revocation model:
+        Access tokens are NOT individually revocable. They rely on a
+        short TTL (JWT_ACCESS_TOKEN_EXPIRE_MINUTES, default 15 min) and
+        refresh-token rotation for session control. For explicit logout
+        or compromise response, revoke the refresh token via
+        `revoke_refresh_token` / `revoke_all_refresh_tokens`; the access
+        token will naturally expire within 15 minutes.
+
+        A `jti` field used to be included but was never consulted —
+        there was no blacklist on the decode path. It was removed
+        (2026-04, R1) rather than left as a decorative leftover that
+        implied revocation support that did not exist. If per-token
+        revocation becomes a product requirement, re-introduce `jti`
+        AND wire a Redis `revoked_jti:{jti}` lookup inside
+        `decode_access_token`; don't re-add the field alone.
     """
     settings = get_settings()
     now = datetime.now(timezone.utc)
@@ -62,7 +76,6 @@ def create_access_token(
         "tier":  tier,
         "exp":   expire,
         "iat":   now,
-        "jti":   str(uuid.uuid4()),
         "type":  "access",
     }
     return jwt.encode(

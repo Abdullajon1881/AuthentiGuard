@@ -70,3 +70,10 @@ QUEUE_DEPTH = Gauge(
     "Current number of messages in a Celery queue",
     ["queue"],
 )
+
+# ── Audit log backpressure ───────────────────────────────────────────
+
+AUDIT_LOG_DROPPED = Counter(
+    "audit_log_dropped_total",
+    "Audit log writes dropped due to in-flight cap (DB slow/unavailable)",
+)
