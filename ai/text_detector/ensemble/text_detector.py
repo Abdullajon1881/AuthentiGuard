@@ -401,22 +401,44 @@ class TextDetector:
         # Nested under evidence_summary["product"] so existing
         # consumers are not broken, but new integrations can read a
         # simple, self-documenting block.
-        def _band(c: float) -> str:
-            if c >= 0.60:
-                return "high"
-            if c >= 0.30:
-                return "medium"
-            return "low"
+
+        # Confidence bands — explicit, documented thresholds.
+        # "high":   confidence >= 0.60 (score far from 0.5; strong signal)
+        # "medium": confidence >= 0.30 (moderate signal)
+        # "low":    confidence <  0.30 (near 0.5; weak signal — likely UNCERTAIN)
+        BAND_HIGH = 0.60
+        BAND_MEDIUM = 0.30
+        if confidence >= BAND_HIGH:
+            confidence_band = "high"
+        elif confidence >= BAND_MEDIUM:
+            confidence_band = "medium"
+        else:
+            confidence_band = "low"
+
+        l1_val = round(float(by_name.get("perplexity", LayerResult("perplexity", 0.5)).score), 4)
+        l2_val = round(float(by_name.get("stylometry", LayerResult("stylometry", 0.5)).score), 4)
+        l3_val = round(float(by_name.get("transformer", LayerResult("transformer", 0.5)).score), 4) if "transformer" in by_name else None
+
+        explanation = _build_explanation(
+            label=label,
+            score=score,
+            l1=l1_val,
+            l2=l2_val,
+            l3=l3_val,
+            word_count=word_count,
+            short_text_min=SHORT_TEXT_WORD_MIN,
+        )
 
         evidence_summary["product"] = {
             "label": label,
             "confidence": round(confidence, 4),
-            "confidence_band": _band(confidence),
+            "confidence_band": confidence_band,
             "calibrated_probability": round(score, 4),
+            "explanation": explanation,
             "signals": {
-                "l1_perplexity": round(float(by_name.get("perplexity", LayerResult("perplexity", 0.5)).score), 4),
-                "l2_stylometry": round(float(by_name.get("stylometry", LayerResult("stylometry", 0.5)).score), 4),
-                "l3_transformer": round(float(by_name.get("transformer", LayerResult("transformer", 0.5)).score), 4) if "transformer" in by_name else None,
+                "l1_perplexity": l1_val,
+                "l2_stylometry": l2_val,
+                "l3_transformer": l3_val,
             },
             "meta_mode": "lr_calibrated" if used_lr_meta else "fixed_weight_fallback",
             "model_version": MODEL_VERSION,
@@ -430,6 +452,67 @@ class TextDetector:
             feature_vector=feature_vector,
             evidence_summary=evidence_summary,
         )
+
+
+def _build_explanation(
+    *,
+    label: str,
+    score: float,
+    l1: float,
+    l2: float,
+    l3: float | None,
+    word_count: int,
+    short_text_min: int,
+) -> str:
+    """One-sentence, human-readable explanation of the prediction.
+
+    Pure rule-based mapping from signals to plain English. No ML, no
+    SHAP, no heavy computation. The explanation is for operators and
+    end users who do not understand probability scores.
+    """
+    if label == "UNCERTAIN" and word_count < short_text_min:
+        return (
+            f"Text is too short ({word_count} words, minimum {short_text_min}) "
+            f"for a reliable assessment."
+        )
+
+    if label == "UNCERTAIN":
+        return (
+            f"The detection signals are mixed (probability {score:.0%}). "
+            f"No confident determination can be made."
+        )
+
+    # Identify the strongest signal for the explanation
+    reasons: list[str] = []
+    if l3 is not None:
+        if l3 >= 0.70:
+            reasons.append("the language model detected AI-typical patterns")
+        elif l3 <= 0.30:
+            reasons.append("the language model found natural human writing patterns")
+
+    if l1 >= 0.50:
+        reasons.append("text predictability is high (low perplexity)")
+    elif l1 <= 0.15:
+        reasons.append("text has natural unpredictability")
+
+    if l2 >= 0.45:
+        reasons.append("writing style shows AI-typical characteristics")
+    elif l2 <= 0.20:
+        reasons.append("writing style appears natural")
+
+    if not reasons:
+        if label == "AI":
+            reasons.append("multiple signals indicate AI-generated content")
+        else:
+            reasons.append("multiple signals indicate human-written content")
+
+    # Assemble
+    if label == "AI":
+        lead = f"Likely AI-generated ({score:.0%} probability)"
+    else:
+        lead = f"Likely human-written ({1 - score:.0%} probability)"
+
+    return f"{lead}: {reasons[0]}."
 
 
 def _build_top_signals(layer_results: list[LayerResult]) -> list[dict]:
