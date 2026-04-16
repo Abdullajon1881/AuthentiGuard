@@ -20,14 +20,14 @@
   --text-2:   #a9a192;
   --text-3:   #6d6559;
 
-  /* Red/coral accent — Authentic.inc brand */
-  --accent:     #c44b37;
-  --accent-dim: rgba(196,75,55,0.10);
-  --accent-hover: #d4553f;
+  /* Terra-cotta red accent — Authentic brand */
+  --accent:     #c13b1b;
+  --accent-dim: rgba(193,59,27,0.10);
+  --accent-hover: #d4432a;
 
   /* Semantic */
-  --ai:         #c44b37;
-  --ai-dim:     rgba(196,75,55,0.08);
+  --ai:         #c13b1b;
+  --ai-dim:     rgba(193,59,27,0.08);
   --human:      #3a9e72;
   --human-dim:  rgba(58,158,114,0.08);
   --uncertain:  #c49a2f;
@@ -48,24 +48,40 @@
   --radius-lg: 10px;
 }
 
-/* ── Light mode: Authentic.inc cream ───────────────────────── */
+/* ── Light mode: Authentic brand cream ─────────────────────── */
+/* Matched to authentic.inc landing page palette:
+   cream background, warm ink text, terra-cotta red accent */
 .light {
-  --bg:       #f4f1ec;
-  --bg-2:     #ebe8e2;
-  --bg-3:     #e0dcd5;
-  --bg-4:     #d4d0c8;
+  --bg:       #f5f3ee;
+  --bg-2:     #eceae4;
+  --bg-3:     #e3e0d9;
+  --bg-4:     #d9d5cd;
 
-  --border:   #d8d4cc;
-  --border-2: #c8c3ba;
-  --border-3: #a8a298;
+  --border:   rgba(26,24,22,0.08);
+  --border-2: rgba(26,24,22,0.12);
+  --border-3: rgba(26,24,22,0.22);
 
-  --text:     #1a1a1a;
-  --text-2:   #4a4a4a;
-  --text-3:   #8a8a84;
+  --text:     #1a1816;
+  --text-2:   #4d4943;
+  --text-3:   #8a8580;
 
-  --accent:     #c44b37;
-  --accent-dim: rgba(196,75,55,0.07);
-  --accent-hover: #b3402e;
+  --accent:     #c13b1b;
+  --accent-dim: rgba(193,59,27,0.07);
+  --accent-hover: #a83218;
+
+  /* Semantic — slightly adjusted for light bg readability */
+  --ai:         #c13b1b;
+  --ai-dim:     rgba(193,59,27,0.06);
+  --human:      #1e7a45;
+  --human-dim:  rgba(30,122,69,0.06);
+  --uncertain:  #9a7b1a;
+  --uncertain-dim: rgba(154,123,26,0.06);
+
+  /* Layer colors — slightly deeper for light bg contrast */
+  --layer-1: #4a82b8;
+  --layer-2: #7b62b4;
+  --layer-3: #b45278;
+  --layer-4: #b47838;
 }
 
 /* ── Base ───────────────────────────────────────────────────── */
@@ -77,7 +93,12 @@ html {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
+
+/* Light mode: use dark scrollbar track to match cream bg */
+.light::-webkit-scrollbar-thumb { background: var(--border-3); }
+.light::-webkit-scrollbar-thumb:hover { background: #8a8580; }
 
 body { min-height: 100vh; }
 
@@ -155,8 +176,8 @@ a, button, input, textarea, select {
 }
 
 @keyframes highlight-in {
-  from { background: rgba(196,75,55,0); }
-  to   { background: rgba(196,75,55,0.10); }
+  from { background: rgba(193,59,27,0); }
+  to   { background: rgba(193,59,27,0.10); }
 }
 .sentence-ai { animation: highlight-in 0.3s ease forwards; }
 

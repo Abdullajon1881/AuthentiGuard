@@ -19,6 +19,8 @@ volumes:
   caddy_data:
   caddy_config:
   model_cache:
+  prometheus_data:
+  grafana_data:
 
 # ── Secrets (file-backed; never committed — see secrets/README.md) ──
 # Root credentials are bootstrap/admin only. Backend and worker use a
@@ -86,7 +88,18 @@ services:
     image: redis:7-alpine
     container_name: ag_redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required} --save 60 1 --loglevel warning --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: >-
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      --save 60 1
+      --save 300 10
+      --appendonly yes
+      --appendfsync everysec
+      --loglevel warning
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 60
+      --timeout 300
     volumes:
       - redis_data:/data
     networks:
@@ -102,6 +115,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   # ── MinIO (S3-compatible object storage) ──────────────────
   minio:
@@ -269,6 +283,50 @@ services:
       - redis
     networks:
       - authentiguard
+
+  # ── Prometheus (internal only — not exposed via Caddy) ────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: ag_prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+    volumes:
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - backend
+    networks:
+      - authentiguard
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # ── Grafana (internal only — not exposed via Caddy) ──────
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: ag_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?GRAFANA_PASSWORD is required}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/authentiguard-ops.json
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - authentiguard
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   # ── Next.js Frontend ──────────────────────────────────────
   frontend:

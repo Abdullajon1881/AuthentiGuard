@@ -1,0 +1,14 @@
+# Prometheus scrape configuration for AuthentiGuard
+# Scrapes the FastAPI /metrics endpoint (prometheus_client format)
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "authentiguard-backend"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:8000"]
+        labels:
+          service: "backend"

@@ -232,10 +232,28 @@ def _check_queue_depths() -> dict[str, int]:
     """Check Redis queue lengths for all Celery queues."""
     try:
         from ..core.config import get_settings
-        import redis
+        import redis as sync_redis
 
         settings = get_settings()
-        r = redis.from_url(settings.REDIS_URL, socket_timeout=5)
+        r = sync_redis.from_url(settings.REDIS_URL, socket_timeout=5)
+
+        # Verify Redis is actually reachable before checking queues
+        try:
+            r.ping()
+        except Exception as ping_exc:
+            log.critical(
+                "ALERT_REDIS_UNAVAILABLE",
+                error=str(ping_exc),
+                action="Redis is unreachable — rate limiting, caching, and "
+                       "Celery task dispatch are degraded. Check Redis container health.",
+            )
+            _post_alert_webhook(
+                key="redis_unavailable",
+                severity="critical",
+                message="Redis is unreachable. Rate limiting, caching, and task dispatch are degraded.",
+                extra={"error": str(ping_exc)},
+            )
+            return {}
 
         queues = ["text", "image", "audio", "video", "webhook"]
         depths = {}

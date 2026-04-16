@@ -106,6 +106,29 @@ curl -X POST http://localhost:8000/api/v1/analyze/text \
 
 The endpoint returns a `job_id`. Poll `GET /api/v1/jobs/{job_id}` until `status` is `COMPLETED`, then fetch the result from `GET /api/v1/jobs/{job_id}/result`.
 
+## Monitoring
+
+Prometheus + Grafana ship in the docker-compose stack. No extra setup required.
+
+**Dev:** `docker compose up -d` — Prometheus at `http://localhost:9090`, Grafana at `http://localhost:3001` (login: `admin` / `admin`).
+
+**Prod:** `docker compose -f docker-compose.prod.yml up -d` — Prometheus and Grafana are on the internal network only (not exposed via Caddy). Set `GRAFANA_PASSWORD` in your environment.
+
+The pre-provisioned **AuthentiGuard Operations** dashboard (`infra/monitoring/grafana/dashboards/authentiguard-ops.json`) includes:
+
+| Panel | Metric |
+|-------|--------|
+| Request Rate | `http_requests_total` (total + 5xx RPS) |
+| HTTP Latency | `http_request_duration_seconds` (p50/p95/p99) |
+| Detection Duration | `detection_duration_seconds` (p50/p95/p99) |
+| Queue Depth | `celery_queue_depth` per queue |
+| Error Rate | HTTP 5xx rate + job failure rate |
+| Detector Fallback | `detector_fallback_active` (1 = L3 failed to load) |
+| Meta Classifier Fallback | `meta_classifier_fallback_active` (1 = LR meta not loaded) |
+| Audit Log Dropped | `audit_log_dropped_total` (DB backpressure) |
+
+Prometheus scrapes the backend `/metrics` endpoint every 15s. Config: `infra/monitoring/prometheus.yml`.
+
 ## Deployment
 
 **Deployment is human-in-the-loop.** CI automates the safe parts and stops at the cluster boundary.

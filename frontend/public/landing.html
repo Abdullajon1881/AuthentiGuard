@@ -1775,6 +1775,83 @@ h2 em { font-style: italic; color: var(--signal); }
 }
 
 /* ═══════════════════════════════════════════════════════════
+   LIGHT THEME — Authentic brand cream palette
+   ═══════════════════════════════════════════════════════════ */
+html.light {
+  --bg:       #f5f3ee;
+  --bg2:      #eceae4;
+  --bg3:      #e3e0d9;
+  --bg4:      #d9d5cd;
+  --paper:    #f5f3ee;
+  --ink:      #1a1816;
+  --signal:   #c13b1b;
+  --signal-d: rgba(193,59,27,0.08);
+  --signal-b: rgba(193,59,27,0.14);
+  --green:    #2a7a4a;
+  --green-d:  rgba(42,122,74,0.08);
+  --amber:    #a07010;
+  --amber-d:  rgba(160,112,16,0.08);
+  --text:     #1a1816;
+  --text2:    rgba(26,24,22,0.55);
+  --text3:    rgba(26,24,22,0.38);
+  --text4:    rgba(26,24,22,0.08);
+  --border:   rgba(26,24,22,0.08);
+  --border2:  rgba(26,24,22,0.12);
+  --border3:  rgba(26,24,22,0.22);
+}
+
+/* Light overrides for elements that use raw colors */
+html.light body::before { opacity: 0.02; }
+
+html.light .nav {
+  background: rgba(245,243,238,0.92);
+}
+
+html.light .hero-bg {
+  background-image:
+    linear-gradient(rgba(26,24,22,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(26,24,22,0.06) 1px, transparent 1px);
+}
+
+html.light .hero-scan {
+  background: linear-gradient(90deg, transparent, rgba(193,59,27,0.3), transparent);
+}
+
+html.light .hero-ring { border-color: rgba(26,24,22,0.06); }
+html.light .hero-ring:nth-child(3) { border-top-color: rgba(193,59,27,0.2); }
+html.light .hero-ring:nth-child(4) { border-top-color: rgba(193,59,27,0.12); }
+
+html.light .btn-primary { color: #fff; }
+html.light .nav-pill { color: #fff !important; }
+html.light .nav-auth-register { color: #fff; }
+html.light .auth-submit { color: #fff; }
+
+html.light .auth-overlay { background: rgba(26,24,22,0.4); }
+html.light .auth-modal { background: #f5f3ee; border-color: rgba(26,24,22,0.12); }
+html.light .auth-input { background: #fff; border-color: rgba(26,24,22,0.15); color: #1a1816; }
+html.light .auth-input::placeholder { color: rgba(26,24,22,0.35); }
+html.light .auth-oauth-btn { background: #fff; border-color: rgba(26,24,22,0.12); color: #1a1816; }
+html.light .auth-oauth-btn:hover { background: #f0ede7; border-color: rgba(26,24,22,0.2); }
+
+/* Theme toggle button in nav */
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--text3);
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+.theme-toggle:hover { color: var(--text); border-color: var(--border3); }
+.theme-toggle svg { width: 16px; height: 16px; }
+
+/* ═══════════════════════════════════════════════════════════
    REDUCED MOTION
    ═══════════════════════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {
@@ -1809,6 +1886,10 @@ h2 em { font-style: italic; color: var(--signal); }
     <span class="nav-user-email" id="nav-user-email"></span>
     <button class="nav-user-logout" onclick="logoutUser()">Log Out</button>
   </div>
+  <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" aria-label="Toggle light/dark mode" title="Toggle theme">
+    <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+    <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="display:none"><path d="M21.752 15.002A9.718 9.718 0 0118 15.75 9.75 9.75 0 018.25 6c0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 12c0 5.385 4.365 9.75 9.75 9.75 3.701 0 6.93-2.062 8.58-5.098a.75.75 0 00.422-.65z"/></svg>
+  </button>
   <button class="nav-hamburger" onclick="document.querySelector('.nav-mobile').classList.toggle('open')" aria-label="Toggle navigation">☰</button>
 </nav>
 <div class="nav-mobile">
@@ -2256,6 +2337,38 @@ h2 em { font-style: italic; color: var(--signal); }
 </footer>
 
 <script>
+/* ═══════════════════════════════════════════════════════════
+   THEME TOGGLE
+   ═══════════════════════════════════════════════════════════ */
+(function initTheme() {
+  const stored = localStorage.getItem('ag_theme');
+  const preferLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+  const theme = stored || (preferLight ? 'light' : 'dark');
+  applyTheme(theme);
+})();
+
+function applyTheme(t) {
+  const html = document.documentElement;
+  const sunIcon = document.getElementById('theme-icon-sun');
+  const moonIcon = document.getElementById('theme-icon-moon');
+  if (t === 'light') {
+    html.classList.add('light');
+    if (sunIcon) sunIcon.style.display = 'none';
+    if (moonIcon) moonIcon.style.display = 'block';
+  } else {
+    html.classList.remove('light');
+    if (sunIcon) sunIcon.style.display = 'block';
+    if (moonIcon) moonIcon.style.display = 'none';
+  }
+}
+
+function toggleTheme() {
+  const isLight = document.documentElement.classList.contains('light');
+  const next = isLight ? 'dark' : 'light';
+  applyTheme(next);
+  localStorage.setItem('ag_theme', next);
+}
+
 /* ═══════════════════════════════════════════════════════════
    CONFIG — operator sets BASE_URL
    ═══════════════════════════════════════════════════════════ */

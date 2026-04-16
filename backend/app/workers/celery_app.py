@@ -14,6 +14,7 @@ Enterprise jobs are submitted at priority 9, free tier at priority 1.
 from __future__ import annotations
 
 from celery import Celery  # type: ignore
+from celery.schedules import crontab  # type: ignore
 
 from ..core.config import get_settings
 
@@ -28,6 +29,7 @@ celery_app = Celery(
         "app.workers.webhook_worker",
         "app.workers.cleanup",
         "app.workers.alerting",
+        "app.workers.drift_worker",
     ],
 )
 
@@ -104,6 +106,10 @@ celery_app.conf.beat_schedule = {
     "health-alerting": {
         "task": "app.workers.alerting.check_health",
         "schedule": 60.0,  # every 60 seconds
+    },
+    "daily-drift-detection": {
+        "task": "app.workers.drift_worker.run_daily_drift",
+        "schedule": crontab(hour=2, minute=0),  # daily at 02:00 UTC
     },
 }
 
