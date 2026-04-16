@@ -1,0 +1,39 @@
+{
+  "git_sha": "543a4bf68076abbe851112434f13b693a54b7897",
+  "timestamp_utc": "2026-04-16T02:34:05.101729+00:00",
+  "model_version": "3.1-reliability-gated",
+  "checkpoint": "ai/text_detector/checkpoints/transformer_v3_hard/phase1",
+  "data_split": "datasets/processed/test.parquet",
+  "data_split_sha256": "215ee1cecc8e412c24946ba04e842779f7bfa9acac9f4a88e24874cc67c4634d",
+  "n_total": 2000,
+  "n_definitive": 1013,
+  "n_abstained": 987,
+  "coverage": 0.5065,
+  "abstain_rate": 0.4935,
+  "label_distribution": {
+    "HUMAN": 990,
+    "UNCERTAIN": 987,
+    "AI": 23
+  },
+  "metrics_on_definitive_only": {
+    "n": 1013,
+    "reliability_accuracy": 0.998,
+    "f1": 0.9565,
+    "precision": 0.9565,
+    "recall": 0.9565,
+    "auroc": 0.9748353096179183,
+    "confusion_matrix": [
+      [
+        989,
+        1
+      ],
+      [
+        1,
+        22
+      ]
+    ]
+  },
+  "full_set_f1_treating_uncertain_as_not_ai": 0.0432,
+  "per_source_reliability": {},
+  "wallclock_seconds": 1638.94
+}

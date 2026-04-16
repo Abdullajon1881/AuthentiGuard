@@ -100,6 +100,22 @@ def _build_record(
     LayerResult (one of them missing, etc.) cannot poison the log.
     """
     layer_results = getattr(result, "layer_results", []) or []
+    raw_score = float(getattr(result, "score", 0.5))
+    final_label = str(getattr(result, "label", "UNCERTAIN"))
+    # confidence_margin: distance from the legacy 0.41 threshold.
+    # Positive = leaning AI side, negative = leaning HUMAN side.
+    # Near zero = maximally uncertain by the old threshold's standard.
+    confidence_margin = round(raw_score - 0.41, 4)
+    # zone: which of the 3 reliability zones the score falls into
+    # BEFORE the gating rules. The final_label may differ from the
+    # zone if a gating rule overrode it (short text, disagreement).
+    if raw_score >= 0.70:
+        score_zone = "AI"
+    elif raw_score <= 0.30:
+        score_zone = "HUMAN"
+    else:
+        score_zone = "UNCERTAIN"
+
     record: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "model_version": model_version,
@@ -107,8 +123,10 @@ def _build_record(
         "l1_score": _layer_score(layer_results, "perplexity"),
         "l2_score": _layer_score(layer_results, "stylometry"),
         "l3_score": _layer_score(layer_results, "transformer"),
-        "meta_probability": float(getattr(result, "score", 0.5)),
-        "final_label": str(getattr(result, "label", "UNCERTAIN")),
+        "meta_probability": raw_score,
+        "final_label": final_label,
+        "confidence_margin": confidence_margin,
+        "zone": score_zone,
     }
     if include_text and isinstance(text, str):
         # Cap stored text to bound sample-log size. The tail is kept

@@ -1,0 +1,124 @@
+{
+  "git_sha": "543a4bf68076abbe851112434f13b693a54b7897",
+  "timestamp_utc": "2026-04-16T02:36:26.258472+00:00",
+  "model_version": "3.1-reliability-gated",
+  "checkpoint": "ai/text_detector/checkpoints/transformer_v3_hard/phase1",
+  "data_split": "datasets/processed_v2/test.parquet",
+  "data_split_sha256": "2af685854bc385373a124d7e64dd9bb322833402787c67559876acf4bbdb652b",
+  "n_total": 3482,
+  "n_definitive": 1666,
+  "n_abstained": 1816,
+  "coverage": 0.4785,
+  "abstain_rate": 0.5215,
+  "label_distribution": {
+    "UNCERTAIN": 1816,
+    "HUMAN": 1624,
+    "AI": 42
+  },
+  "metrics_on_definitive_only": {
+    "n": 1666,
+    "reliability_accuracy": 0.964,
+    "f1": 0.2683,
+    "precision": 0.2619,
+    "recall": 0.275,
+    "auroc": 0.6500230627306273,
+    "confusion_matrix": [
+      [
+        1595,
+        31
+      ],
+      [
+        29,
+        11
+      ]
+    ]
+  },
+  "full_set_f1_treating_uncertain_as_not_ai": 0.0124,
+  "per_source_reliability": {
+    "adv_aiified_human": {
+      "n_total": 137,
+      "n_definitive": 132,
+      "coverage": 0.9635,
+      "reliability_accuracy": null,
+      "f1": null,
+      "note": "single-class or all-UNCERTAIN subset"
+    },
+    "adv_humanized_ai": {
+      "n_total": 212,
+      "n_definitive": 0,
+      "coverage": 0.0,
+      "reliability_accuracy": null,
+      "f1": null,
+      "note": "single-class or all-UNCERTAIN subset"
+    },
+    "adv_mixed": {
+      "n_total": 169,
+      "n_definitive": 82,
+      "coverage": 0.4852,
+      "reliability_accuracy": 0.6707,
+      "f1": 0.2703
+    },
+    "artem9k": {
+      "n_total": 437,
+      "n_definitive": 290,
+      "coverage": 0.6636,
+      "reliability_accuracy": 0.9862,
+      "f1": 0.3333
+    },
+    "artem9k_hn": {
+      "n_total": 34,
+      "n_definitive": 0,
+      "coverage": 0.0,
+      "reliability_accuracy": null,
+      "f1": null,
+      "note": "single-class or all-UNCERTAIN subset"
+    },
+    "dmitva": {
+      "n_total": 787,
+      "n_definitive": 274,
+      "coverage": 0.3482,
+      "reliability_accuracy": 0.9964,
+      "f1": 0.8
+    },
+    "email": {
+      "n_total": 91,
+      "n_definitive": 89,
+      "coverage": 0.978,
+      "reliability_accuracy": null,
+      "f1": null,
+      "note": "single-class or all-UNCERTAIN subset"
+    },
+    "email_extra": {
+      "n_total": 39,
+      "n_definitive": 39,
+      "coverage": 1.0,
+      "reliability_accuracy": null,
+      "f1": null,
+      "note": "single-class or all-UNCERTAIN subset"
+    },
+    "gpt_wiki": {
+      "n_total": 1362,
+      "n_definitive": 568,
+      "coverage": 0.417,
+      "reliability_accuracy": 0.9718,
+      "f1": 0.2727
+    },
+    "wiki": {
+      "n_total": 99,
+      "n_definitive": 87,
+      "coverage": 0.8788,
+      "reliability_accuracy": null,
+      "f1": null,
+      "note": "single-class or all-UNCERTAIN subset"
+    },
+    "wiki_formal": {
+      "n_total": 115,
+      "n_definitive": 105,
+      "coverage": 0.913,
+      "reliability_accuracy": null,
+      "f1": null,
+      "note": "single-class or all-UNCERTAIN subset"
+    }
+  },
+  "wallclock_seconds": 1780.11
+}

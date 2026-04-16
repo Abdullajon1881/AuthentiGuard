@@ -27,7 +27,7 @@ log = structlog.get_logger(__name__)
 # (new weights, new calibrator, new layers, threshold change).
 # Consumed by backend/app/observability/prediction_log.py so every
 # logged prediction is traceable to a specific model configuration.
-MODEL_VERSION = "3.0-stage2-lr_meta-isotonic"
+MODEL_VERSION = "3.1-reliability-gated"
 
 # Score thresholds — adaptive based on number of active layers.
 #
@@ -326,21 +326,63 @@ class TextDetector:
                 score = max(0.01, min(0.99, score))
 
         active_count = len(layer_results)
-        # Label mapping: the LR meta has its own (fit) threshold on
-        # calibrated probabilities, so it bypasses the fixed
-        # _THRESHOLDS_BY_LAYERS table that was tuned for the Stage 1
-        # fixed-weight score distribution. UNCERTAIN band is a symmetric
-        # +/-0.05 window around the learned threshold — narrow because
-        # calibrated probabilities are supposed to mean what they say.
-        if used_lr_meta:
-            if score >= self._lr_threshold + 0.05:
-                label = "AI"
-            elif score <= self._lr_threshold - 0.05:
-                label = "HUMAN"
-            else:
-                label = "UNCERTAIN"
+
+        # ── Reliability-gated 3-zone decision policy ────────────
+        #
+        # Optimised for per-request reliability (precision of returned
+        # labels) over raw coverage. Three zones:
+        #
+        #   score >= 0.70  →  AI       (high confidence)
+        #   score <= 0.30  →  HUMAN    (high confidence)
+        #   else           →  UNCERTAIN (abstain — not reliable enough)
+        #
+        # Two additional GATING RULES can push an otherwise-decisive
+        # prediction into UNCERTAIN:
+        #
+        #   G1  Short text (<50 words): L1 perplexity and L2 stylometry
+        #       have no statistical power on short inputs. Flag as
+        #       UNCERTAIN rather than risking a noisy prediction.
+        #
+        #   G2  Layer disagreement: if L2 (stylometry) and L3
+        #       (transformer) disagree by more than 0.40 on the raw
+        #       score (one says "AI", the other says "human"), the
+        #       ensemble is internally contradicted. Flag UNCERTAIN.
+        #
+        # These thresholds are intentionally conservative. The trade
+        # is: lower coverage (more UNCERTAINs) in exchange for higher
+        # reliability on the predictions we DO return.
+
+        ZONE_AI_THRESHOLD = 0.70
+        ZONE_HUMAN_THRESHOLD = 0.30
+        SHORT_TEXT_WORD_MIN = 50
+        DISAGREEMENT_THRESHOLD = 0.40
+
+        # Default zone from the score
+        if score >= ZONE_AI_THRESHOLD:
+            label = "AI"
+        elif score <= ZONE_HUMAN_THRESHOLD:
+            label = "HUMAN"
         else:
-            label = _score_to_label(score, active_layers=active_count)
+            label = "UNCERTAIN"
+
+        # G1: short-text gate
+        word_count = len(text.split())
+        if word_count < SHORT_TEXT_WORD_MIN and label != "UNCERTAIN":
+            label = "UNCERTAIN"
+
+        # G2: L2–L3 disagreement gate
+        by_name_for_gate = {r.layer_name: r for r in layer_results}
+        l2_r = by_name_for_gate.get("stylometry")
+        l3_r = by_name_for_gate.get("transformer")
+        if (
+            l2_r is not None and not l2_r.error
+            and l3_r is not None and not l3_r.error
+        ):
+            l2_score = float(l2_r.score)
+            l3_score = float(l3_r.score)
+            if abs(l2_score - l3_score) > DISAGREEMENT_THRESHOLD and label != "UNCERTAIN":
+                label = "UNCERTAIN"
+
         confidence = _score_to_confidence(score)
 
         # ── Evidence summary for the UI ─────────────────────────
