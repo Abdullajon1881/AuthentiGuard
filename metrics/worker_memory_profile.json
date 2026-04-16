@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "stage": 5,
+  "phase": "part1_worker_memory",
+  "git_sha": "2f90629eb9de6e3d2df30ac5829707fee8819d33",
+  "timestamp_utc": "2026-04-16T00:37:43.762660+00:00",
+  "machine": {
+    "cpu_count_logical": 20,
+    "cpu_count_physical": 14,
+    "total_memory_gb": 16.8,
+    "platform": "Windows-11-10.0.22621-SP0",
+    "python": "3.12.10"
+  },
+  "concurrency": 4,
+  "pool_startup_wall_s": 19.29,
+  "workers": [
+    {
+      "pid": 17444,
+      "load_seconds": 19.15,
+      "startup_rss_mb": 857.7,
+      "active_layers": [
+        0,
+        1,
+        2
+      ],
+      "lr_meta_loaded": true,
+      "model_version": "3.0-stage2-lr_meta-isotonic",
+      "first_inference_rss_mb": 1519.5
+    },
+    {
+      "pid": 17104,
+      "load_seconds": 19.15,
+      "startup_rss_mb": 858.0,
+      "active_layers": [
+        0,
+        1,
+        2
+      ],
+      "lr_meta_loaded": true,
+      "model_version": "3.0-stage2-lr_meta-isotonic",
+      "first_inference_rss_mb": 1531.4
+    },
+    {
+      "pid": 17008,
+      "load_seconds": 19.15,
+      "startup_rss_mb": 859.9,
+      "active_layers": [
+        0,
+        1,
+        2
+      ],
+      "lr_meta_loaded": true,
+      "model_version": "3.0-stage2-lr_meta-isotonic",
+      "first_inference_rss_mb": 1529.4
+    },
+    {
+      "pid": 19148,
+      "load_seconds": 19.15,
+      "startup_rss_mb": 858.6,
+      "active_layers": [
+        0,
+        1,
+        2
+      ],
+      "lr_meta_loaded": true,
+      "model_version": "3.0-stage2-lr_meta-isotonic",
+      "first_inference_rss_mb": 1535.2
+    }
+  ],
+  "first_inference_probes": [
+    {
+      "pid": 17444,
+      "t_start": 1776299883.246038,
+      "t_end": 1776299883.935378,
+      "infer_ms": 689.34,
+      "score": 0.9375,
+      "label": "AI",
+      "rss_mb": 1519.5
+    },
+    {
+      "pid": 17104,
+      "t_start": 1776299883.936378,
+      "t_end": 1776299884.4932015,
+      "infer_ms": 556.82,
+      "score": 0.0286,
+      "label": "HUMAN",
+      "rss_mb": 1531.4
+    },
+    {
+      "pid": 17008,
+      "t_start": 1776299884.4932015,
+      "t_end": 1776299884.7256773,
+      "infer_ms": 232.48,
+      "score": 0.01,
+      "label": "HUMAN",
+      "rss_mb": 1529.4
+    },
+    {
+      "pid": 19148,
+      "t_start": 1776299884.7266772,
+      "t_end": 1776299884.9544353,
+      "infer_ms": 227.76,
+      "score": 0.9375,
+      "label": "AI",
+      "rss_mb": 1535.2
+    }
+  ]
+}

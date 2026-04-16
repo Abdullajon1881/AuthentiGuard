@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "stage": 5,
+  "phase": "part4_scaling",
+  "git_sha": "2f90629eb9de6e3d2df30ac5829707fee8819d33",
+  "timestamp_utc": "2026-04-16T00:37:43.762660+00:00",
+  "recommendations": {
+    "concurrency": 4,
+    "peak_worker_rss_mb": 1543.6,
+    "startup_rss_mb_max": 859.9,
+    "run_max_worker_rss_mb": 1543.6,
+    "memory_request_mb": 6174,
+    "memory_limit_mb": 7409,
+    "memory_headroom_factor": 1.2,
+    "recommended_cpu_cores": 18.89,
+    "max_stable_rps_per_pod": 10.0,
+    "max_observed_rps_per_pod": 17.67,
+    "pods_required_for_50_rps": 5,
+    "pods_required_for_100_rps": 10,
+    "pods_required_for_200_rps": 20,
+    "burst_headroom_pods": 3,
+    "notes": [
+      "Memory limit formula: peak_worker_rss * concurrency * 1.2",
+      "Peak worker RSS is the max observed across startup / per-level / burst.",
+      "Pod counts assume max stable rps per pod is reproducible in production; real-world throughput may differ by \u00b110% due to network/broker/DB latency.",
+      "burst_headroom_pods is 30% over the 100 rps fleet, rounded up to at least 1."
+    ]
+  },
+  "burst_phase": {
+    "label": "burst_13.0rps",
+    "target_rps": 13.0,
+    "duration_s": 600.0,
+    "wall_s": 600.2,
+    "n_workers": 4,
+    "n_completed": 7801,
+    "n_errors": 0,
+    "error_rate": 0.0,
+    "actual_rps": 12.997,
+    "throughput_ratio": 1.0,
+    "latency_inference_ms": {
+      "n": 7801,
+      "mean": 138.57,
+      "p50": 144.23,
+      "p95": 228.05,
+      "p99": 233.86,
+      "max": 289.37
+    },
+    "latency_e2e_ms": {
+      "n": 7801,
+      "mean": 138.58,
+      "p50": 144.23,
+      "p95": 228.05,
+      "p99": 233.86,
+      "max": 289.37
+    },
+    "latency_queue_ms": {
+      "n": 7801,
+      "mean": 0.01,
+      "p50": 0.0,
+      "p95": 0.0,
+      "p99": 0.51,
+      "max": 1.54
+    },
+    "per_worker_completion_counts": {
+      "19148": 1951,
+      "17104": 1950,
+      "17444": 1950,
+      "17008": 1950
+    },
+    "total_rss_mb": {
+      "mean": 6116.4,
+      "max": 6144.9
+    },
+    "max_worker_rss_mb": {
+      "mean": 1539.7,
+      "max": 1543.6
+    },
+    "total_cpu_percent": {
+      "mean": 1622.0,
+      "max": 1704.7
+    },
+    "error_kinds": {},
+    "status": "STABLE"
+  }
+}

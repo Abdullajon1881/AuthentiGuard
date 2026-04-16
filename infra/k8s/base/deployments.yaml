@@ -171,8 +171,16 @@ spec:
           envFrom:
             - configMapRef: {name: authentiguard-config}
             - secretRef:    {name: authentiguard-secrets}
+          # Stage 5 (2026-04-16): memory sized from measured per-worker RSS.
+          # Formula: peak_worker_rss * concurrency * 1.2 (20% headroom).
+          # Measured peak worker RSS = 1542 MB at concurrency=4.
+          # Request bumped from 2Gi -> 6Gi so Kubernetes reserves
+          # enough headroom for all four Celery forks at runtime (the
+          # prior 2Gi request would cause node overcommit under load
+          # even though the 8Gi limit was already safe).
+          # See metrics/deployment_capacity_report.json for evidence.
           resources:
-            requests: {cpu: "1000m", memory: "2Gi"}
+            requests: {cpu: "1000m", memory: "6Gi"}
             limits:   {cpu: "4000m", memory: "8Gi"}
           volumeMounts:
             - name: model-cache

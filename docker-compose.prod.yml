@@ -217,9 +217,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 7.2G
         reservations:
-          memory: 2G
+          memory: 6G
+      # Stage 5 (2026-04-16): sized from measured per-worker RSS.
+      # Formula: peak_worker_rss * concurrency * 1.2 (20% headroom).
+      # See metrics/deployment_capacity_report.json for the evidence.
     healthcheck:
       test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping", "--timeout", "10"]
       interval: 60s
