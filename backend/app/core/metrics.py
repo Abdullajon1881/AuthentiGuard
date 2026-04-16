@@ -55,6 +55,12 @@ DETECTOR_FALLBACK = Gauge(
     "1 if fallback detector is active, 0 if ML detector loaded",
 )
 
+META_CLASSIFIER_FALLBACK = Gauge(
+    "meta_classifier_fallback_active",
+    "1 if the Stage 2 LR meta failed to load and the system is using "
+    "fixed-weight combiner instead. Fires independently of DETECTOR_FALLBACK.",
+)
+
 # ── Worker health ─────────────────────────────────────────────────────
 
 STUCK_JOBS_CLEANED = Counter(

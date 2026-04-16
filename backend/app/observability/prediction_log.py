@@ -102,13 +102,14 @@ def _build_record(
     layer_results = getattr(result, "layer_results", []) or []
     raw_score = float(getattr(result, "score", 0.5))
     final_label = str(getattr(result, "label", "UNCERTAIN"))
-    # confidence_margin: distance from the legacy 0.41 threshold.
-    # Positive = leaning AI side, negative = leaning HUMAN side.
-    # Near zero = maximally uncertain by the old threshold's standard.
-    confidence_margin = round(raw_score - 0.41, 4)
-    # zone: which of the 3 reliability zones the score falls into
-    # BEFORE the gating rules. The final_label may differ from the
-    # zone if a gating rule overrode it (short text, disagreement).
+    # confidence_margin: distance from the calibrated meta threshold
+    # (0.50 — the natural argmax for an isotonic-calibrated probability).
+    # Positive = leaning AI, negative = leaning HUMAN, near zero = uncertain.
+    _META_THRESHOLD = 0.50
+    confidence_margin = round(raw_score - _META_THRESHOLD, 4)
+    # zone: which of the 3 reliability zones the raw score falls into
+    # BEFORE the short-text gating rule. final_label may differ from
+    # zone if the gate overrode it.
     if raw_score >= 0.70:
         score_zone = "AI"
     elif raw_score <= 0.30:

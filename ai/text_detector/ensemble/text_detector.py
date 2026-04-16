@@ -27,7 +27,7 @@ log = structlog.get_logger(__name__)
 # (new weights, new calibrator, new layers, threshold change).
 # Consumed by backend/app/observability/prediction_log.py so every
 # logged prediction is traceable to a specific model configuration.
-MODEL_VERSION = "3.1-reliability-gated"
+MODEL_VERSION = "3.2-g2-removed-product-output"
 
 # Score thresholds — adaptive based on number of active layers.
 #
@@ -209,6 +209,11 @@ class TextDetector:
                         threshold=self._lr_threshold,
                         feature_order=self._lr_feature_order,
                     )
+                    try:
+                        from backend.app.core.metrics import META_CLASSIFIER_FALLBACK
+                        META_CLASSIFIER_FALLBACK.set(0)
+                    except Exception:
+                        pass
                 else:
                     log.warning(
                         "lr_meta_calibrator_bundle_malformed — "
@@ -220,12 +225,23 @@ class TextDetector:
                 log.error("lr_meta_load_failed", error=str(exc))
                 self._lr_meta = None
                 self._lr_calibrator = None
+                try:
+                    from backend.app.core.metrics import META_CLASSIFIER_FALLBACK
+                    META_CLASSIFIER_FALLBACK.set(1)
+                except Exception:
+                    pass
         else:
-            log.info(
-                "lr_meta_not_present",
+            log.warning(
+                "META_FALLBACK_ACTIVE",
                 reason="meta_classifier.joblib / meta_calibrator.joblib not on disk; "
-                       "using Stage 1 fixed-weight combiner",
+                       "using Stage 1 fixed-weight combiner. Calibrated probabilities "
+                       "are NOT available in this mode.",
             )
+            try:
+                from backend.app.core.metrics import META_CLASSIFIER_FALLBACK
+                META_CLASSIFIER_FALLBACK.set(1)
+            except Exception:
+                pass
 
         active_count = len(self._active_layers)
         log.info("text_detector_ready", active_layers=active_count,
@@ -329,35 +345,27 @@ class TextDetector:
 
         # ── Reliability-gated 3-zone decision policy ────────────
         #
-        # Optimised for per-request reliability (precision of returned
-        # labels) over raw coverage. Three zones:
-        #
+        # Three zones based on the calibrated probability:
         #   score >= 0.70  →  AI       (high confidence)
         #   score <= 0.30  →  HUMAN    (high confidence)
-        #   else           →  UNCERTAIN (abstain — not reliable enough)
+        #   else           →  UNCERTAIN (abstain)
         #
-        # Two additional GATING RULES can push an otherwise-decisive
-        # prediction into UNCERTAIN:
+        # One gating rule:
+        #   G1  Short text (<50 words): L1 and L2 have insufficient
+        #       signal on short inputs. Force UNCERTAIN.
         #
-        #   G1  Short text (<50 words): L1 perplexity and L2 stylometry
-        #       have no statistical power on short inputs. Flag as
-        #       UNCERTAIN rather than risking a noisy prediction.
-        #
-        #   G2  Layer disagreement: if L2 (stylometry) and L3
-        #       (transformer) disagree by more than 0.40 on the raw
-        #       score (one says "AI", the other says "human"), the
-        #       ensemble is internally contradicted. Flag UNCERTAIN.
-        #
-        # These thresholds are intentionally conservative. The trade
-        # is: lower coverage (more UNCERTAINs) in exchange for higher
-        # reliability on the predictions we DO return.
+        # G2 (L2-L3 disagreement) was REMOVED because the mean
+        # |L2 - L3| disagreement is 0.404 (measured on val) — right
+        # at the 0.40 threshold, so it fired on ~48% of all inputs
+        # and killed AI recall to 2.3%. The meta-classifier's learned
+        # L2 coefficient is 0.08 (near-zero); using L2 as a gating
+        # signal contradicts the meta's own finding that L2 is
+        # near-useless conditional on L1 and L3.
 
         ZONE_AI_THRESHOLD = 0.70
         ZONE_HUMAN_THRESHOLD = 0.30
         SHORT_TEXT_WORD_MIN = 50
-        DISAGREEMENT_THRESHOLD = 0.40
 
-        # Default zone from the score
         if score >= ZONE_AI_THRESHOLD:
             label = "AI"
         elif score <= ZONE_HUMAN_THRESHOLD:
@@ -369,19 +377,6 @@ class TextDetector:
         word_count = len(text.split())
         if word_count < SHORT_TEXT_WORD_MIN and label != "UNCERTAIN":
             label = "UNCERTAIN"
-
-        # G2: L2–L3 disagreement gate
-        by_name_for_gate = {r.layer_name: r for r in layer_results}
-        l2_r = by_name_for_gate.get("stylometry")
-        l3_r = by_name_for_gate.get("transformer")
-        if (
-            l2_r is not None and not l2_r.error
-            and l3_r is not None and not l3_r.error
-        ):
-            l2_score = float(l2_r.score)
-            l3_score = float(l3_r.score)
-            if abs(l2_score - l3_score) > DISAGREEMENT_THRESHOLD and label != "UNCERTAIN":
-                label = "UNCERTAIN"
 
         confidence = _score_to_confidence(score)
 
@@ -400,6 +395,31 @@ class TextDetector:
             },
             "top_signals": _build_top_signals(layer_results),
             "sentence_scores": _merge_sentence_scores(layer_results),
+        }
+
+        # ── Product output: clean user-facing schema ────────────
+        # Nested under evidence_summary["product"] so existing
+        # consumers are not broken, but new integrations can read a
+        # simple, self-documenting block.
+        def _band(c: float) -> str:
+            if c >= 0.60:
+                return "high"
+            if c >= 0.30:
+                return "medium"
+            return "low"
+
+        evidence_summary["product"] = {
+            "label": label,
+            "confidence": round(confidence, 4),
+            "confidence_band": _band(confidence),
+            "calibrated_probability": round(score, 4),
+            "signals": {
+                "l1_perplexity": round(float(by_name.get("perplexity", LayerResult("perplexity", 0.5)).score), 4),
+                "l2_stylometry": round(float(by_name.get("stylometry", LayerResult("stylometry", 0.5)).score), 4),
+                "l3_transformer": round(float(by_name.get("transformer", LayerResult("transformer", 0.5)).score), 4) if "transformer" in by_name else None,
+            },
+            "meta_mode": "lr_calibrated" if used_lr_meta else "fixed_weight_fallback",
+            "model_version": MODEL_VERSION,
         }
 
         return EnsembleResult(
