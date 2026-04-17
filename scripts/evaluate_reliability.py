@@ -48,6 +48,20 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 
+def _wilson_ci(successes: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score 95% CI for a binomial proportion. Stable at small n
+    and at proportions near 0 or 1, where the Normal approximation fails.
+    Returns (low, high) both in [0, 1]. (0, 0) if n == 0.
+    """
+    if n <= 0:
+        return (0.0, 0.0)
+    phat = successes / n
+    denom = 1.0 + z * z / n
+    centre = (phat + z * z / (2 * n)) / denom
+    half = (z * ((phat * (1 - phat) + z * z / (4 * n)) / n) ** 0.5) / denom
+    return (max(0.0, centre - half), min(1.0, centre + half))
+
+
 def _git_sha() -> str:
     try:
         out = subprocess.check_output(
@@ -168,6 +182,18 @@ def main() -> int:
         recall = float(recall_score(def_true, def_pred_binary, zero_division=0))
         cm = confusion_matrix(def_true, def_pred_binary).tolist()
 
+        # Wilson 95% CI on the reported proportions. All three are binomial
+        # (n = n_definitive for reliability; tp+fn for recall; tp+fp for
+        # precision). Reported alongside the point estimate so downstream
+        # consumers can read a range, not just a number.
+        n_correct = sum(1 for t, p in zip(def_true, def_pred_binary) if t == p)
+        reliability_ci = _wilson_ci(n_correct, n_definitive)
+        tp = sum(1 for t, p in zip(def_true, def_pred_binary) if t == 1 and p == 1)
+        fp = sum(1 for t, p in zip(def_true, def_pred_binary) if t == 0 and p == 1)
+        fn = sum(1 for t, p in zip(def_true, def_pred_binary) if t == 1 and p == 0)
+        precision_ci = _wilson_ci(tp, tp + fp) if (tp + fp) > 0 else (0.0, 0.0)
+        recall_ci = _wilson_ci(tp, tp + fn) if (tp + fn) > 0 else (0.0, 0.0)
+
         try:
             auroc = float(roc_auc_score(def_true, def_scores))
         except Exception:
@@ -176,11 +202,16 @@ def main() -> int:
         metrics_definitive = {
             "n": n_definitive,
             "reliability_accuracy": round(reliability, 4),
+            "reliability_accuracy_ci95": [round(reliability_ci[0], 4),
+                                          round(reliability_ci[1], 4)],
             "f1": round(f1, 4),
             "precision": round(precision, 4),
+            "precision_ci95": [round(precision_ci[0], 4), round(precision_ci[1], 4)],
             "recall": round(recall, 4),
+            "recall_ci95": [round(recall_ci[0], 4), round(recall_ci[1], 4)],
             "auroc": auroc,
             "confusion_matrix": cm,
+            "ci_method": "wilson_95",
         }
     else:
         metrics_definitive = {
@@ -263,10 +294,16 @@ def main() -> int:
     print(f"  coverage:               {coverage:.2%}", file=sys.stderr)
     print(f"  abstain rate:           {abstain_rate:.2%}", file=sys.stderr)
     if metrics_definitive.get("reliability_accuracy") is not None:
-        print(f"  reliability (accuracy): {metrics_definitive['reliability_accuracy']:.4f}", file=sys.stderr)
+        rci = metrics_definitive.get("reliability_accuracy_ci95", [None, None])
+        pci = metrics_definitive.get("precision_ci95", [None, None])
+        rcli = metrics_definitive.get("recall_ci95", [None, None])
+        print(f"  reliability (accuracy): {metrics_definitive['reliability_accuracy']:.4f}  "
+              f"95% CI [{rci[0]:.4f}, {rci[1]:.4f}]", file=sys.stderr)
         print(f"  F1 (definitive only):   {metrics_definitive['f1']:.4f}", file=sys.stderr)
-        print(f"  precision:              {metrics_definitive['precision']:.4f}", file=sys.stderr)
-        print(f"  recall:                 {metrics_definitive['recall']:.4f}", file=sys.stderr)
+        print(f"  precision:              {metrics_definitive['precision']:.4f}  "
+              f"95% CI [{pci[0]:.4f}, {pci[1]:.4f}]", file=sys.stderr)
+        print(f"  recall:                 {metrics_definitive['recall']:.4f}  "
+              f"95% CI [{rcli[0]:.4f}, {rcli[1]:.4f}]", file=sys.stderr)
     print(f"  full-set F1 (UNCERTAIN=not-AI): {full_f1:.4f}", file=sys.stderr)
     return 0
 

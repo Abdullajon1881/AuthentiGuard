@@ -29,35 +29,13 @@ log = structlog.get_logger(__name__)
 # logged prediction is traceable to a specific model configuration.
 MODEL_VERSION = "3.2-g2-removed-product-output"
 
-# Score thresholds — adaptive based on number of active layers.
-#
-# 3-layer AI threshold was FIT on val data via grid search.
-# Source: scripts/fit_ensemble_weights.py -> fit_weights.json
-#   git_sha: fc64addaa53bfd47e98bfb14db7c6ebea887a00f
-#   val_split: datasets/processed/val.parquet (n=2000)
-#   val F1 at this threshold: 0.99692
-#   test F1 verify (not used for selection): 0.99447
-# DO NOT edit the 3-layer AI low-bound by hand — re-run the fit script
-# and update this file and fit_weights.json in lockstep.
-# UNCERTAIN band kept symmetric around the threshold at +/- 0.10.
-# The 2-layer and 4-layer rows are unfit (2-layer is fallback-only;
-# 4-layer is unreachable until an L4 checkpoint is trained).
-_THRESHOLDS_BY_LAYERS = {
-    2: {"AI": (0.55, 1.00), "UNCERTAIN": (0.30, 0.55), "HUMAN": (0.00, 0.30)},
-    3: {"AI": (0.41, 1.00), "UNCERTAIN": (0.31, 0.41), "HUMAN": (0.00, 0.31)},
-    4: {"AI": (0.75, 1.00), "UNCERTAIN": (0.40, 0.75), "HUMAN": (0.00, 0.40)},
-}
-
-# Default for meta-classifier (already calibrated to full range)
-LABEL_THRESHOLDS = _THRESHOLDS_BY_LAYERS[4]
-
-
-def _score_to_label(score: float, active_layers: int = 4) -> str:
-    thresholds = _THRESHOLDS_BY_LAYERS.get(active_layers, LABEL_THRESHOLDS)
-    for label, (low, high) in thresholds.items():
-        if low <= score < high:
-            return label
-    return "UNCERTAIN"
+# Decision thresholds — single source of truth: the reliability-gated
+# 3-zone policy in `TextDetector.analyze()` below uses hard-coded
+# constants `ZONE_AI_THRESHOLD = 0.70` and `ZONE_HUMAN_THRESHOLD = 0.30`.
+# Any previous per-active-layers threshold tables (`_THRESHOLDS_BY_LAYERS`,
+# `LABEL_THRESHOLDS`, `_score_to_label`) have been removed because they
+# were never consulted at inference time and editing them would have no
+# runtime effect — a silent-drift hazard.
 
 
 def _score_to_confidence(score: float) -> float:

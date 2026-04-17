@@ -428,7 +428,15 @@ Same checkpoint, same splits, same combiner — only the gate differs.
 
 ### Stage 3 headline — G2 OFF is the production configuration
 
-- Reliability target `≥ 0.70` **exceeded on both splits** (v1 0.997, v2 0.951).
+- Reliability target `≥ 0.70` **exceeded on both splits** (v1 0.9971, v2 0.9514).
+- **Wilson 95% confidence intervals on reliability (accuracy on definitive):**
+  - v1: **[0.9932, 0.9988]** (n_definitive = 1720, computed 1715/1720 correct).
+  - v2: **[0.9437, 0.9580]** (n_definitive = 3475, computed 3306/3475 correct).
+  - Lower bounds on both splits remain well above the 0.70 target even at
+    the pessimistic end of the 95% CI. Method: Wilson score interval
+    (`scripts/evaluate_reliability.py::_wilson_ci`). Future reliability
+    runs emit these as `metrics_on_definitive_only.reliability_accuracy_ci95`
+    in the JSON artifact.
 - Coverage jumped **+35.35 pp on v1** and **+51.95 pp on v2** vs G2 ON.
 - F1 on definitive improved **+0.04 on v1** and **+0.68 on v2**; recall
   improved **+0.04 on v1** and **+0.71 on v2**.

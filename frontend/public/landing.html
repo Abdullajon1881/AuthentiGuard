@@ -99,7 +99,7 @@ body::before {
 
 .nav-logo {
   font-family: var(--font-ui);
-  font-size: 17px;
+  font-size: 15.3px;
   font-weight: 800;
   letter-spacing: 0.06em;
   color: var(--text);
@@ -112,6 +112,9 @@ body::before {
   align-items: center;
   gap: 36px;
   list-style: none;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .nav-links a {
@@ -1973,6 +1976,9 @@ html.light .auth-oauth-btn:hover { background: #f0ede7; border-color: rgba(26,24
       <a href="#demo" class="btn-primary">Run a Detection <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M8 2l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
       <a href="mailto:enterprise@authentic.inc" class="btn-secondary">Enterprise API →</a>
     </div>
+    <p class="hero-disclaimer" style="margin-top:22px;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.52);max-width:520px;">
+      Probabilistic detector &mdash; not a guarantee. Designed for content analysis and moderation support. Not suitable for punitive decisions or academic enforcement.
+    </p>
   </div>
 
   <div class="hero-right">
