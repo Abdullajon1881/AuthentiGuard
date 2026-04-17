@@ -9,6 +9,7 @@
 - **L1+L2+L3 ensemble, held-out v2 test split, post-fit (includes adversarial subsets, AUTHORITATIVE)**: F1 **0.9529**, precision 0.9243, recall **0.9832**, AUROC 0.9767. Source: `ai/text_detector/accuracy/ensemble_test_eval_v2.post_fit.json`. 3482 rows.
 - **Adversarial subset (`adv_mixed` in v2 test, n=169)**: F1 pre-fit **0.606** → post-fit **0.846** (+24 points from fitting weights and threshold on val).
 - **Combiner weights and AI threshold** are fit on val data via grid search (`scripts/fit_ensemble_weights.py`). Current values: weights `[0.20, 0.35, 0.45]` (L1/L2/L3), AI threshold `0.41`. Val F1 at these values: 0.9969. Val-test F1 gap: 0.00245. Source: `ai/text_detector/accuracy/fit_weights.json`.
+- **Reliability-gated 3-zone decision policy (current prod, `MODEL_VERSION = "3.2-g2-removed-product-output"`):** `score >= 0.70 → AI`, `score <= 0.30 → HUMAN`, else `UNCERTAIN`. G1 short-text gate (<50 words → UNCERTAIN) retained. **G2 (L2-L3 disagreement) deprecated and intentionally disabled** — fired on ~48% of inputs and collapsed AI recall to 2.3%. Measured on held-out test splits with G2 OFF: v1 reliability 0.9971, coverage 86.0%, F1 on definitive 0.9965; v2 reliability 0.9514, coverage 99.80%, F1 on definitive 0.9526. Reliability target `≥ 0.70` exceeded on both splits. See [`ai/text_detector/ACCURACY.md` §Stage 3](ai/text_detector/ACCURACY.md).
 - **Full audit trail:** [`ai/text_detector/ACCURACY.md`](ai/text_detector/ACCURACY.md) — every number above is traceable to a persisted JSON artifact with git SHA and dataset SHA-256.
 
 ### Backend API

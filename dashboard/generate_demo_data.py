@@ -138,9 +138,10 @@ def main():
         ref_edges = [round(i * 0.1, 1) for i in range(11)]
 
     versions = [
-        (0, 2, "3.0-stage1-fixed-weights"),
-        (3, 4, "3.0-stage2-lr_meta-isotonic"),
-        (5, 6, "3.1-reliability-gated"),
+        (0, 1, "3.0-stage1-fixed-weights"),
+        (2, 3, "3.0-stage2-lr_meta-isotonic"),
+        (4, 4, "3.1-reliability-gated"),  # deprecated: G2 disagreement gate
+        (5, 6, "3.2-g2-removed-product-output"),  # current production
     ]
 
     daily_metrics_all: dict[str, dict] = {}
@@ -150,7 +151,7 @@ def main():
         date = (datetime(2026, 4, 10, tzinfo=timezone.utc) + timedelta(days=day)).date()
         date_str = date.isoformat()
 
-        version = "3.1-reliability-gated"
+        version = "3.2-g2-removed-product-output"
         for lo, hi, ver in versions:
             if lo <= day <= hi:
                 version = ver

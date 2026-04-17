@@ -350,9 +350,98 @@ subsets):**
 
 **Verdict: GO for production use of the meta-classifier.**
 
+## Stage 3 — Reliability-gated 3-zone decision policy
+
+**Status: DEPLOYED. Current `MODEL_VERSION = "3.2-g2-removed-product-output"`
+in `ai/text_detector/ensemble/text_detector.py`.**
+
+Overlays a reliability-gated 3-zone decision policy on top of the
+Stage 1/2 combiner:
+
+- `score >= 0.70` → **AI**
+- `score <= 0.30` → **HUMAN**
+- otherwise → **UNCERTAIN** (abstain)
+- **G1 short-text gate:** inputs with `< 50` whitespace-tokens are
+  forced to UNCERTAIN (L1 perplexity and L2 stylometry have
+  insufficient signal on short text).
+
+### G2 disagreement gate — DEPRECATED, INTENTIONALLY DISABLED
+
+Shipped briefly as `3.1-reliability-gated` and removed in
+`3.2-g2-removed-product-output`.
+
+**Rationale for removal:**
+- Mean `|L2 − L3|` on val = **0.404**, at the 0.40 gate threshold, so
+  the gate fired on **~48% of all inputs**.
+- The Stage 2 LR meta-classifier coefficient for L2 is **0.08** (vs
+  L3 = 8.77, L1 = 2.75): L2 is near-useless conditional on L1 and L3.
+  Using L2-vs-L3 disagreement as an abstention signal contradicts the
+  meta's own learned weighting.
+- Measured impact on v1 test (n=2000): AI recall collapsed to **2.3%**
+  (22 AI predictions out of ~1000 ground-truth AI), coverage dropped
+  to 50.65%. See the comparison table below.
+- Measured impact on v2 test (n=3482, adversarial): F1 on definitive
+  **0.2683**, recall **0.275** — the gate silenced the detector on
+  adversarial inputs instead of improving them.
+
+**Do not re-enable G2 without re-running this comparison.** The code
+keeps the historical rationale inline in `text_detector.py:356-363`.
+
+### Measured comparison — G2 OFF (current) vs G2 ON (legacy 3.1)
+
+Same checkpoint, same splits, same combiner — only the gate differs.
+
+**v1 test split (`datasets/processed/test.parquet`, n=2000):**
+
+| Metric | G2 OFF — **3.2 (current prod)** | G2 ON — 3.1 (deprecated) |
+|---|---|---|
+| Source JSON | `ai/text_detector/accuracy/reliability_eval.post_g2_fix.json` | `ai/text_detector/accuracy/reliability_eval.json` |
+| Git SHA | `ae9c2887` | `543a4bf6` |
+| n_definitive | **1720** | 1013 |
+| n_abstained (UNCERTAIN) | **280** | 987 |
+| Coverage | **86.00%** | 50.65% |
+| Abstain rate | **14.00%** | 49.35% |
+| Reliability (accuracy on definitive) | **0.9971** | 0.9980 |
+| F1 on definitive | **0.9965** | 0.9565 |
+| Precision on definitive | **0.9944** | 0.9565 |
+| Recall on definitive | **0.9986** | 0.9565 |
+| AUROC on definitive | **0.9984** | 0.9748 |
+| Confusion matrix (definitive) | `[[1000, 4], [1, 715]]` | `[[989, 1], [1, 22]]` |
+| Label distribution | AI=719, HUMAN=1001, UNCERTAIN=280 | AI=23, HUMAN=990, UNCERTAIN=987 |
+
+**v2 test split (`datasets/processed_v2/test.parquet`, n=3482, includes adversarial subsets):**
+
+| Metric | G2 OFF — **3.2 (current prod)** | G2 ON — 3.1 (deprecated) |
+|---|---|---|
+| Source JSON | `ai/text_detector/accuracy/reliability_eval_v2.post_g2_fix.json` | `ai/text_detector/accuracy/reliability_eval_v2.json` |
+| Git SHA | `ae9c2887` | `543a4bf6` |
+| n_definitive | **3475** | 1666 |
+| n_abstained | **7** | 1816 |
+| Coverage | **99.80%** | 47.85% |
+| Abstain rate | **0.20%** | 52.15% |
+| Reliability (accuracy on definitive) | **0.9514** | 0.9640 |
+| F1 on definitive | **0.9526** | 0.2683 |
+| Precision on definitive | **0.9238** | 0.2619 |
+| Recall on definitive | **0.9832** | 0.2750 |
+| AUROC on definitive | **0.9702** | 0.6500 |
+| Confusion matrix (definitive) | `[[1609, 140], [29, 1697]]` | `[[1595, 31], [29, 11]]` |
+
+### Stage 3 headline — G2 OFF is the production configuration
+
+- Reliability target `≥ 0.70` **exceeded on both splits** (v1 0.997, v2 0.951).
+- Coverage jumped **+35.35 pp on v1** and **+51.95 pp on v2** vs G2 ON.
+- F1 on definitive improved **+0.04 on v1** and **+0.68 on v2**; recall
+  improved **+0.04 on v1** and **+0.71 on v2**.
+- Reliability penalty for removing G2: **−0.09 pp on v1** (within noise),
+  **−1.26 pp on v2** (real but small).
+- Net useful correct calls per split: **1715/2000 (v1)** and
+  **3306/3482 (v2)** with G2 OFF, vs 1011/2000 and 1606/3482 with G2 ON.
+
 ## Change log
 
 | Date | Git SHA | Change | Measured by |
 |---|---|---|---|
 | 2026-04-15 | fc64adda | Initial four measurements: pre-fit v1/v2, fit on val, post-fit v1/v2. First real end-to-end accuracy numbers for the production pipeline. | Stage 1 |
-| 2026-04-16 | (this commit) | Stage 2: learned LR meta + isotonic calibration. End-to-end v1 F1 unchanged at 0.9945; end-to-end v2 F1 essentially unchanged at 0.9518 (−0.0011). UNCERTAIN zone collapsed (65→0 on v1, 247→1 on v2). Brier improved 14× on in-sample val. Full backward compat via auto-discovery and Stage 1 fallback. | Stage 2 |
+| 2026-04-16 | — | Stage 2: learned LR meta + isotonic calibration. End-to-end v1 F1 unchanged at 0.9945; end-to-end v2 F1 essentially unchanged at 0.9518 (−0.0011). UNCERTAIN zone collapsed (65→0 on v1, 247→1 on v2). Brier improved 14× on in-sample val. Full backward compat via auto-discovery and Stage 1 fallback. | Stage 2 |
+| 2026-04-16 | 543a4bf6 | Stage 3 shipped as `3.1-reliability-gated`: added 3-zone decision policy plus G1 short-text gate plus G2 L2-L3 disagreement gate. v1 reliability 99.80%, coverage 50.65%. v2 reliability 96.40%, coverage 47.85%. | Stage 3 (initial) |
+| 2026-04-16 | ae9c2887 | **G2 removed. Current prod `MODEL_VERSION = "3.2-g2-removed-product-output"`.** v1 reliability 99.71%, coverage 86.00%, F1-def 0.9965. v2 reliability 95.14%, coverage 99.80%, F1-def 0.9526. G1 short-text gate retained; 3-zone 0.30/0.70 policy retained. | Stage 3 (G2 deprecated) |

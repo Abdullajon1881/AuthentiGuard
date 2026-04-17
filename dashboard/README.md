@@ -39,7 +39,7 @@ Opens at `http://localhost:8501`.
 | **Drift indicator** | PSI per day with STABLE / MODERATE / SIGNIFICANT coloring |
 | **Coverage over time** | Coverage + abstain rate trend with GREEN threshold line |
 | **Confidence margin** | Distribution of (score - 0.41) showing how far predictions are from the legacy threshold |
-| **Model version comparison** | F1 / precision / recall / AUROC / reliability / coverage across Stage 1, Stage 2, and reliability-gated evaluations |
+| **Model version comparison** | F1 / precision / recall / AUROC / reliability / coverage across Stage 1, Stage 2, legacy reliability-gated (3.1, deprecated), and current `3.2-g2-removed-product-output` (G2 disabled) evaluations |
 
 ## Trust state logic
 

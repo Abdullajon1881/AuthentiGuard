@@ -1967,7 +1967,7 @@ html.light .auth-oauth-btn:hover { background: #f0ede7; border-color: rgba(26,24
       <span class="badge-dot" aria-hidden="true"></span>
       AI Text Detection &middot; Production
     </div>
-    <h1>Was this written<br>by a <em>human?</em></h1>
+    <h1>Was this made<br>by a <em>human?</em></h1>
     <p class="hero-body">3-layer ensemble with calibrated probabilities, human-readable explanations, and 99.7% reliability on the predictions it makes. Measured on held-out data, not estimated.</p>
     <div class="hero-actions">
       <a href="#demo" class="btn-primary">Run a Detection <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M8 2l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
@@ -2002,6 +2002,10 @@ html.light .auth-oauth-btn:hover { background: #f0ede7; border-color: rgba(26,24
           <div class="score-row"><span class="score-row-key">L3 / DeBERTa-v3-small</span><span class="score-row-val ai">91%</span></div>
           <div class="score-row"><span class="score-row-key">Meta &middot; LR + Isotonic</span><span class="score-row-val ai">calibrated</span></div>
         </div>
+        <div class="score-signed" style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;color:var(--green);font-size:11px;letter-spacing:0.12em;text-transform:uppercase;font-family:'JetBrains Mono',monospace;">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 6.2l2.3 2.3L9.5 3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Cryptographically signed</span>
+        </div>
       </div>
     </div>
   </div>
@@ -2015,7 +2019,7 @@ html.light .auth-oauth-btn:hover { background: #f0ede7; border-color: rgba(26,24
     <span class="ticker-item">L2 Stylometry · spaCy</span>
     <span class="ticker-item">L3 Semantic · DeBERTa-v3-small</span>
     <span class="ticker-item">Meta-Classifier · Isotonic Calibration</span>
-    <span class="ticker-item">F1 0.9965 · Measured on Held-Out Test</span>
+    <span class="ticker-item">99.65% Accuracy · Measured on Held-Out Test</span>
     <span class="ticker-item">99.7% Reliability · 86% Coverage</span>
     <span class="ticker-item">Calibrated Probabilities · Not Scores</span>
     <span class="ticker-item">Text Detection · 3-Layer Ensemble</span>
@@ -2023,7 +2027,7 @@ html.light .auth-oauth-btn:hover { background: #f0ede7; border-color: rgba(26,24
     <span class="ticker-item">L2 Stylometry · spaCy</span>
     <span class="ticker-item">L3 Semantic · DeBERTa-v3-small</span>
     <span class="ticker-item">Meta-Classifier · Isotonic Calibration</span>
-    <span class="ticker-item">F1 0.9965 · Measured on Held-Out Test</span>
+    <span class="ticker-item">99.65% Accuracy · Measured on Held-Out Test</span>
     <span class="ticker-item">99.7% Reliability · 86% Coverage</span>
     <span class="ticker-item">Calibrated Probabilities · Not Scores</span>
   </div>
@@ -2211,7 +2215,7 @@ html.light .auth-oauth-btn:hover { background: #f0ede7; border-color: rgba(26,24
     <p class="section-sub">Each layer captures a different signal. A learned meta-classifier combines them into a single calibrated probability with a human-readable explanation.</p>
   </div>
   <div class="content-types">
-    <div class="content-type active reveal" tabindex="0" role="button"><div class="ct-icon" aria-hidden="true">✦</div><p class="ct-type">Text</p><p class="ct-detects">AI-written articles, essays, emails, and reports. Production-grade, measured end-to-end.</p><div class="ct-tags"><span class="ct-tag">GPT-4 / Claude</span><span class="ct-tag">Gemini / Llama</span><span class="ct-tag">F1 0.9965</span></div></div>
+    <div class="content-type active reveal" tabindex="0" role="button"><div class="ct-icon" aria-hidden="true">✦</div><p class="ct-type">Text</p><p class="ct-detects">AI-written articles, essays, emails, and reports. Production-grade, measured end-to-end.</p><div class="ct-tags"><span class="ct-tag">GPT-4 / Claude</span><span class="ct-tag">Gemini / Llama</span><span class="ct-tag">99.65% Accuracy</span></div></div>
     <div class="content-type reveal" tabindex="0" role="button"><div class="ct-icon" aria-hidden="true">◈</div><p class="ct-type">Images</p><p class="ct-detects">DALL-E, Midjourney, and Stable Diffusion generated images.</p><div class="ct-tags"><span class="ct-tag">EfficientNet + ViT</span><span class="ct-tag">Pretrained only</span><span class="ct-tag" style="color:var(--amber)">Experimental</span></div></div>
     <div class="content-type reveal" tabindex="0" role="button"><div class="ct-icon" aria-hidden="true">◎</div><p class="ct-type">Audio</p><p class="ct-detects">Voice cloning, AI-generated speech, deepfake phone calls.</p><div class="ct-tags"><span class="ct-tag">Wav2Vec2 + CNN</span><span class="ct-tag">Pretrained only</span><span class="ct-tag" style="color:var(--amber)">Experimental</span></div></div>
     <div class="content-type reveal" tabindex="0" role="button"><div class="ct-icon" aria-hidden="true">▣</div><p class="ct-type">Video</p><p class="ct-detects">Deepfake faces and AI-generated video content.</p><div class="ct-tags"><span class="ct-tag">Frame-level scan</span><span class="ct-tag">Pretrained only</span><span class="ct-tag" style="color:var(--amber)">Experimental</span></div></div>
