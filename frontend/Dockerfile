@@ -1,5 +1,8 @@
 FROM node:20-alpine AS builder
 
+ARG BACKEND_URL=http://localhost:8000
+ENV BACKEND_URL=$BACKEND_URL
+
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --only=production 2>/dev/null || npm install
