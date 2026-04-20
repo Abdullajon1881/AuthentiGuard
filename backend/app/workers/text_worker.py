@@ -337,7 +337,7 @@ def _get_detector():
             root = str(root_path)
             if root not in sys.path:
                 sys.path.insert(0, root)
-            from ai.text_detector.ensemble.text_detector import TextDetector  # type: ignore
+            from ai.text_detector.pipeline import TextDetector  # type: ignore
 
             # Resolve L3 (DeBERTa-v3-small) checkpoint from the single
             # canonical constant. See TEXT_CHECKPOINT_SUBPATH at the top.
@@ -423,7 +423,7 @@ class TextDetectionWorker(BaseDetectionWorker):
         try:
             from ..observability.prediction_log import log_prediction
             try:
-                from ai.text_detector.ensemble.text_detector import MODEL_VERSION
+                from ai.text_detector.pipeline import MODEL_VERSION
             except Exception:
                 MODEL_VERSION = "unknown"
             log_prediction(
